@@ -29,6 +29,8 @@ from routes.credentialing import router as credentialing_router
 from routes.audit import router as audit_router
 from routes.health import router as health_router
 from routes.google_oauth import router as google_oauth_router
+from routes.push import router as push_router
+from routes.license import router as license_router
 
 # Configure PHI-safe logging before any other operations
 configure_safe_logging()
@@ -61,6 +63,8 @@ app.include_router(credentialing_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
 app.include_router(google_oauth_router, prefix="/api")
+app.include_router(push_router, prefix="/api")
+app.include_router(license_router, prefix="/api")
 
 
 @app.on_event("shutdown")

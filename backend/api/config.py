@@ -22,3 +22,6 @@ DATABASE_URL = os.getenv(
 )
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+
+# External services
+TRELLIS_SERVICES_URL = os.getenv("TRELLIS_SERVICES_URL", "")

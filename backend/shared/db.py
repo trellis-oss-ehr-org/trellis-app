@@ -259,6 +259,7 @@ def _practice_to_dict(r) -> dict:
         "timezone": r["timezone"],
         "cash_only": r.get("cash_only", False) or False,
         "booking_enabled": r.get("booking_enabled", True) if r.get("booking_enabled") is not None else True,
+        "licensed_features": r.get("licensed_features") or {},
         "created_at": r["created_at"].isoformat(),
         "updated_at": r["updated_at"].isoformat(),
     }
@@ -2016,6 +2017,97 @@ async def mark_sms_reminder_sent(appointment_id: str) -> None:
         "UPDATE appointments SET sms_reminder_sent_at = now() WHERE id = $1::uuid",
         appointment_id,
     )
+
+
+async def mark_push_reminder_sent(appointment_id: str) -> None:
+    """Mark that a push notification reminder has been sent for an appointment."""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE appointments SET push_reminder_sent_at = now() WHERE id = $1::uuid",
+        appointment_id,
+    )
+
+
+async def upsert_push_subscription(
+    client_id: str, fcm_token: str, device_label: str | None = None
+) -> None:
+    """Create or update a push subscription for a client device."""
+    pool = await get_pool()
+    await pool.execute(
+        """
+        INSERT INTO push_subscriptions (client_id, fcm_token, device_label)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (client_id, fcm_token)
+        DO UPDATE SET device_label = COALESCE(EXCLUDED.device_label, push_subscriptions.device_label),
+                      updated_at = now()
+        """,
+        client_id,
+        fcm_token,
+        device_label,
+    )
+
+
+async def delete_push_subscription(client_id: str, fcm_token: str) -> None:
+    """Remove a single push subscription."""
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM push_subscriptions WHERE client_id = $1 AND fcm_token = $2",
+        client_id,
+        fcm_token,
+    )
+
+
+async def delete_push_subscription_by_token(fcm_token: str) -> None:
+    """Remove a push subscription by token (for stale token cleanup)."""
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM push_subscriptions WHERE fcm_token = $1",
+        fcm_token,
+    )
+
+
+async def get_push_subscriptions_for_client(client_id: str) -> list[dict]:
+    """Get all push subscriptions for a client."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM push_subscriptions WHERE client_id = $1 ORDER BY updated_at DESC",
+        client_id,
+    )
+    return [
+        {
+            "id": str(r["id"]),
+            "client_id": r["client_id"],
+            "fcm_token": r["fcm_token"],
+            "device_label": r["device_label"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+        }
+        for r in rows
+    ]
+
+
+async def get_push_tokens_for_appointments(appointment_ids: list[str]) -> dict[str, list[str]]:
+    """Batch fetch FCM tokens for a list of appointments.
+
+    Returns a dict mapping appointment_id -> list of FCM tokens for the client.
+    Joins through appointments to get the client_id, then looks up push_subscriptions.
+    """
+    if not appointment_ids:
+        return {}
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT a.id::text AS appointment_id, ps.fcm_token
+        FROM appointments a
+        JOIN push_subscriptions ps ON ps.client_id = a.client_id
+        WHERE a.id = ANY($1::uuid[])
+        """,
+        appointment_ids,
+    )
+    result: dict[str, list[str]] = {}
+    for r in rows:
+        result.setdefault(r["appointment_id"], []).append(r["fcm_token"])
+    return result
 
 
 async def get_client_sms_info(firebase_uid: str) -> dict | None:

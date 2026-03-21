@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useAuth } from "../hooks/useAuth";
 import OutstandingBalances from "../components/billing/OutstandingBalances";
+import ClaimStatusBadge from "../components/billing/ClaimStatusBadge";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -112,20 +113,6 @@ function formatCurrency(amount: number | null | undefined): string {
   return `$${amount.toFixed(2)}`;
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  generated: "bg-blue-50 text-blue-700",
-  submitted: "bg-amber-50 text-amber-700",
-  paid: "bg-teal-50 text-teal-700",
-  outstanding: "bg-red-50 text-red-700",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  generated: "Generated",
-  submitted: "Submitted",
-  paid: "Paid",
-  outstanding: "Outstanding",
-};
-
 const FILTER_OPTIONS = [
   { value: "all", label: "All" },
   { value: "generated", label: "Generated" },
@@ -218,8 +205,8 @@ export default function BillingPage() {
       if (billingSettings) setBillingConnected(billingSettings.connected);
       // Fetch denial count if billing is connected
       if (billingSettings?.connected) {
-        api.get<{ count: number }>("/api/billing/denials")
-          .then((resp) => setDenialCount((resp as any).count ?? 0))
+        api.get<any>("/api/billing/denials?limit=1")
+          .then((resp) => setDenialCount(resp.total ?? resp.count ?? 0))
           .catch(() => setDenialCount(0));
       }
       setSuperbills(
@@ -1067,13 +1054,7 @@ export default function BillingPage() {
                               title={`A/R aging: ${aging.label}`}
                             />
                           )}
-                          <span
-                            className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              STATUS_STYLES[sb.status] || ""
-                            }`}
-                          >
-                            {STATUS_LABELS[sb.status] || sb.status}
-                          </span>
+                          <ClaimStatusBadge status={sb.status} />
                           {sb.status === "generated" && filingDeadlineMap.has(sb.id) && (() => {
                             const daysLeft = filingDeadlineMap.get(sb.id)!;
                             const isUrgent = daysLeft <= 14;

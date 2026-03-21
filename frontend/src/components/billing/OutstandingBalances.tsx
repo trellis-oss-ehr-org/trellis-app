@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../../hooks/useApi";
+import ClientPaymentButton from "./ClientPaymentButton";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -352,8 +353,7 @@ export default function OutstandingBalances({ billingConnected }: OutstandingBal
                 )}
 
                 <p className="text-xs text-warm-400">
-                  Note: Individual payment links will be generated per superbill from the client detail page.
-                  This view shows the total outstanding balance.
+                  This will generate a Stripe checkout link for the full outstanding balance. The link opens in a new tab so you can share it with the client.
                 </p>
 
                 <div className="flex items-center justify-end gap-3 pt-2">
@@ -366,16 +366,17 @@ export default function OutstandingBalances({ billingConnected }: OutstandingBal
                   >
                     Cancel
                   </button>
-                  <Link
-                    to={`/clients/${paymentModal.clientId}`}
-                    onClick={() => {
+                  <ClientPaymentButton
+                    clientId={paymentModal.clientId}
+                    clientName={paymentModal.clientName}
+                    clientEmail={paymentModal.clientEmail}
+                    amountCents={Math.round(paymentModal.balance * 100)}
+                    variant="clinician"
+                    onSuccess={() => {
                       setPaymentModal(null);
                       setPaymentLinkResult(null);
                     }}
-                    className="px-4 py-2 text-sm font-medium rounded-xl bg-teal-600 text-white hover:bg-teal-700 transition-colors"
-                  >
-                    Go to Client Details
-                  </Link>
+                  />
                 </div>
               </div>
             ) : (

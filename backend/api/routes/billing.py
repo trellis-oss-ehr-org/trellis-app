@@ -32,7 +32,7 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -2198,3 +2198,843 @@ async def email_statement(
         "balance_due": balance_due,
     }
 
+
+# ---------------------------------------------------------------------------
+# RCM (Revenue Cycle Management) Proxy Endpoints
+# ---------------------------------------------------------------------------
+# These endpoints proxy requests to the external trellis-services RCM API.
+# They require a configured billing_api_key on the practice.
+
+class StripeOnboardRequest(BaseModel):
+    return_path: str = "/settings/billing"
+    refresh_path: str = "/settings/billing"
+
+
+class PaymentLinkRequest(BaseModel):
+    client_id: str
+    amount: float
+    description: str | None = None
+
+
+@router.post("/superbills/{superbill_id}/submit")
+async def submit_superbill_claim(
+    superbill_id: str,
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Submit a superbill as an electronic claim via the RCM service.
+
+    Assembles claim data from the superbill, client, practice, and clinician
+    records, then submits to trellis-services. Updates the superbill with the
+    external claim ID and status.
+    """
+    from rcm_client import get_rcm_client, RCMError
+
+    pool = await get_pool()
+
+    # Fetch superbill
+    superbill = await pool.fetchrow(
+        "SELECT * FROM superbills WHERE id = $1::uuid", superbill_id,
+    )
+    if not superbill:
+        raise HTTPException(404, "Superbill not found")
+
+    # Get RCM client
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(
+            400,
+            "RCM service not configured. Set up billing API key in practice settings.",
+        )
+
+    # Gather context for claim assembly
+    client = await get_client(superbill["client_id"])
+    if not client:
+        raise HTTPException(404, "Client not found for this superbill")
+
+    practice = await get_practice_profile(superbill["clinician_id"])
+    clinician_rec = await get_clinician(superbill["clinician_id"])
+
+    # Parse diagnosis codes
+    diag_codes = superbill["diagnosis_codes"]
+    if isinstance(diag_codes, str):
+        diag_codes = json.loads(diag_codes)
+
+    # Build claim data
+    claim_data = {
+        "superbill_id": str(superbill["id"]),
+        "date_of_service": superbill["date_of_service"].isoformat()
+            if hasattr(superbill["date_of_service"], "isoformat")
+            else str(superbill["date_of_service"]),
+        "cpt_code": superbill["cpt_code"],
+        "cpt_description": superbill["cpt_description"],
+        "diagnosis_codes": diag_codes or [],
+        "fee": float(superbill["fee"]) if superbill["fee"] is not None else 0,
+        "place_of_service": superbill.get("place_of_service", "02"),
+        "modifiers": superbill.get("modifiers") or [],
+        "auth_number": superbill.get("auth_number"),
+        # Client / subscriber info
+        "client": {
+            "id": client.get("firebase_uid") or client.get("id"),
+            "full_name": client.get("full_name"),
+            "date_of_birth": str(client.get("date_of_birth")) if client.get("date_of_birth") else None,
+            "sex": client.get("sex"),
+            "address": _format_client_address(client),
+            "phone": client.get("phone"),
+            "email": client.get("email"),
+            "payer_name": client.get("payer_name"),
+            "payer_id": client.get("payer_id") or superbill.get("payer_id"),
+            "member_id": client.get("member_id"),
+            "group_number": client.get("group_number"),
+        },
+        # Billing provider
+        "billing_provider": {
+            "npi": superbill.get("billing_npi") or (practice.get("npi") if practice else None),
+            "tax_id": practice.get("tax_id") if practice else None,
+            "name": practice.get("practice_name") if practice else None,
+            "address": {
+                "line1": practice.get("practice_address") or practice.get("address_line1", ""),
+                "city": practice.get("practice_city", ""),
+                "state": practice.get("practice_state", ""),
+                "zip": practice.get("practice_zip", ""),
+            } if practice else None,
+        },
+        # Rendering provider (if different from billing)
+        "rendering_provider": {
+            "npi": clinician_rec.get("npi") if clinician_rec else None,
+            "name": clinician_rec.get("clinician_name") if clinician_rec else None,
+        } if clinician_rec else None,
+    }
+
+    try:
+        result = await rcm.submit_claim(claim_data)
+    except RCMError as e:
+        logger.error("Claim submission failed for superbill %s: %s", superbill_id, e)
+        raise HTTPException(
+            e.status_code or 502,
+            f"Claim submission failed: {e.detail.get('detail', str(e))}",
+        )
+
+    # Update superbill with claim tracking info
+    claim_id = result.get("claim_id") or result.get("id")
+    claim_status = result.get("status", "submitted")
+    now = datetime.now(timezone.utc)
+
+    await pool.execute(
+        """
+        UPDATE superbills
+        SET claim_external_id = $1,
+            claim_status = $2,
+            claim_submitted_at = $3,
+            status = 'submitted',
+            date_submitted = $3
+        WHERE id = $4::uuid
+        """,
+        claim_id,
+        claim_status,
+        now,
+        superbill_id,
+    )
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="claim_submitted",
+        resource_type="superbill",
+        resource_id=superbill_id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        metadata={
+            "claim_external_id": claim_id,
+            "claim_status": claim_status,
+            "cpt_code": superbill["cpt_code"],
+            "fee": float(superbill["fee"]) if superbill["fee"] else None,
+        },
+    )
+
+    logger.info(
+        "Claim submitted: superbill=%s, claim_id=%s, status=%s",
+        superbill_id[:8], claim_id, claim_status,
+    )
+
+    return {
+        "superbill_id": superbill_id,
+        "claim_external_id": claim_id,
+        "claim_status": claim_status,
+        "submitted_at": now.isoformat(),
+        **result,
+    }
+
+
+@router.get("/superbills/{superbill_id}/era")
+async def get_superbill_era(
+    superbill_id: str,
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Get ERA (Electronic Remittance Advice) data for a superbill's claim."""
+    from rcm_client import get_rcm_client, RCMError
+
+    pool = await get_pool()
+
+    # Verify superbill exists
+    superbill = await pool.fetchrow(
+        "SELECT id, claim_external_id, era_data FROM superbills WHERE id = $1::uuid",
+        superbill_id,
+    )
+    if not superbill:
+        raise HTTPException(404, "Superbill not found")
+
+    # Return cached ERA data if available
+    if superbill["era_data"]:
+        return {"superbill_id": superbill_id, "era": superbill["era_data"]}
+
+    if not superbill["claim_external_id"]:
+        raise HTTPException(404, "No claim has been submitted for this superbill")
+
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    try:
+        era = await rcm.get_era(superbill["claim_external_id"])
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    if not era:
+        raise HTTPException(404, "No ERA data available yet for this claim")
+
+    # Cache ERA data on the superbill
+    await pool.execute(
+        """
+        UPDATE superbills
+        SET era_data = $1::jsonb,
+            claim_adjudicated_at = COALESCE(claim_adjudicated_at, now())
+        WHERE id = $2::uuid
+        """,
+        json.dumps(era),
+        superbill_id,
+    )
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="era_retrieved",
+        resource_type="superbill",
+        resource_id=superbill_id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+
+    return {"superbill_id": superbill_id, "era": era}
+
+
+@router.get("/billing/denials/{superbill_id}")
+async def get_superbill_denials(
+    superbill_id: str,
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Get denial records for a superbill."""
+    from rcm_client import get_rcm_client, RCMError
+
+    pool = await get_pool()
+
+    # Verify superbill exists
+    exists = await pool.fetchval(
+        "SELECT 1 FROM superbills WHERE id = $1::uuid", superbill_id,
+    )
+    if not exists:
+        raise HTTPException(404, "Superbill not found")
+
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    try:
+        denials = await rcm.get_denials_by_superbill(superbill_id)
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="denials_viewed",
+        resource_type="superbill",
+        resource_id=superbill_id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        metadata={"denial_count": len(denials)},
+    )
+
+    return {"superbill_id": superbill_id, "denials": denials}
+
+
+@router.post("/billing/eligibility/{client_id}")
+async def check_client_eligibility(
+    client_id: str,
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Run a real-time eligibility check for a client through the clearinghouse."""
+    from rcm_client import get_rcm_client, RCMError
+
+    pool = await get_pool()
+
+    client = await get_client_by_id(client_id)
+    if not client:
+        raise HTTPException(404, "Client not found")
+
+    await enforce_clinician_owns_client(user, client["firebase_uid"])
+
+    practice = await get_practice_profile(user["uid"])
+    if not practice:
+        raise HTTPException(400, "Practice profile not configured")
+
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    eligibility_data = {
+        "client_id": client_id,
+        "subscriber": {
+            "full_name": client.get("full_name"),
+            "date_of_birth": str(client.get("date_of_birth")) if client.get("date_of_birth") else None,
+            "sex": client.get("sex"),
+            "member_id": client.get("member_id"),
+            "payer_name": client.get("payer_name"),
+            "payer_id": client.get("payer_id"),
+        },
+        "provider": {
+            "npi": practice.get("npi"),
+            "name": practice.get("practice_name"),
+            "tax_id": practice.get("tax_id"),
+        },
+        "service_type": "mental_health",
+    }
+
+    try:
+        result = await rcm.check_eligibility(eligibility_data)
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="eligibility_checked",
+        resource_type="client",
+        resource_id=client_id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        metadata={
+            "payer": client.get("payer_name"),
+            "eligible": result.get("eligible"),
+        },
+    )
+
+    return result
+
+
+@router.get("/billing/eligibility/{client_id}")
+async def get_cached_eligibility(
+    client_id: str,
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Get the most recent cached eligibility result for a client."""
+    from rcm_client import get_rcm_client, RCMError
+
+    client = await get_client_by_id(client_id)
+    if not client:
+        raise HTTPException(404, "Client not found")
+
+    await enforce_clinician_owns_client(user, client["firebase_uid"])
+
+    pool = await get_pool()
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    try:
+        result = await rcm.get_client_eligibility(client_id)
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    if not result:
+        raise HTTPException(404, "No eligibility data on file. Run an eligibility check first.")
+
+    return result
+
+
+@router.get("/billing/enrollments")
+async def list_enrollments(
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """List clearinghouse enrollment applications for the practice."""
+    from rcm_client import get_rcm_client, RCMError
+
+    pool = await get_pool()
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    try:
+        enrollments = await rcm.list_enrollments()
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    return {"enrollments": enrollments}
+
+
+@router.post("/billing/enrollments")
+async def create_enrollment(
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Submit a new clearinghouse enrollment application."""
+    from rcm_client import get_rcm_client, RCMError
+
+    body = await request.json()
+    pool = await get_pool()
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    try:
+        result = await rcm.create_enrollment(body)
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="enrollment_created",
+        resource_type="enrollment",
+        resource_id=result.get("id", ""),
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        metadata={"payer": body.get("payer_name")},
+    )
+
+    return result
+
+
+@router.post("/billing/stripe/onboard")
+async def stripe_onboard(
+    body: StripeOnboardRequest,
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Start Stripe Connect onboarding. Returns a URL to redirect the user to."""
+    from rcm_client import get_rcm_client, RCMError
+    from config import TRELLIS_SERVICES_URL
+
+    frontend_url = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
+    return_url = f"{frontend_url}{body.return_path}"
+    refresh_url = f"{frontend_url}{body.refresh_path}"
+
+    pool = await get_pool()
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    try:
+        result = await rcm.stripe_onboard(return_url, refresh_url)
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="stripe_onboard_started",
+        resource_type="stripe",
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+
+    return result
+
+
+@router.get("/billing/stripe/status")
+async def stripe_status(
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Check Stripe Connect account status for the practice."""
+    from rcm_client import get_rcm_client, RCMError
+
+    pool = await get_pool()
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    try:
+        result = await rcm.stripe_status()
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    return result
+
+
+@router.post("/billing/stripe/payment-link")
+async def create_payment_link(
+    body: PaymentLinkRequest,
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Create a Stripe payment link for a client balance."""
+    from rcm_client import get_rcm_client, RCMError
+
+    client = await get_client_by_id(body.client_id)
+    if not client:
+        raise HTTPException(404, "Client not found")
+
+    pool = await get_pool()
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    practice = await get_practice_profile(user["uid"])
+
+    payment_data = {
+        "client_id": body.client_id,
+        "client_name": client.get("full_name"),
+        "client_email": client.get("email"),
+        "amount": body.amount,
+        "description": body.description or f"Payment to {practice['practice_name']}" if practice else "Payment",
+        "practice_name": practice.get("practice_name") if practice else None,
+    }
+
+    try:
+        result = await rcm.stripe_payment_link(payment_data)
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="payment_link_created",
+        resource_type="payment",
+        resource_id=body.client_id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        metadata={
+            "amount": body.amount,
+            "client_id": body.client_id,
+        },
+    )
+
+    return result
+
+
+@router.get("/billing/client-balance/{client_id}")
+async def get_client_balance(
+    client_id: str,
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Get the billing balance for a client.
+
+    Computes balance from superbills (total fees minus total payments).
+    """
+    client = await get_client_by_id(client_id)
+    if not client:
+        raise HTTPException(404, "Client not found")
+
+    await enforce_clinician_owns_client(user, client["firebase_uid"])
+
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """
+        SELECT
+            COALESCE(SUM(fee), 0) AS total_billed,
+            COALESCE(SUM(amount_paid), 0) AS total_paid,
+            COUNT(*) AS superbill_count,
+            COUNT(*) FILTER (WHERE status = 'submitted') AS submitted_count,
+            COUNT(*) FILTER (WHERE status = 'paid') AS paid_count,
+            COUNT(*) FILTER (WHERE status = 'outstanding') AS outstanding_count
+        FROM superbills
+        WHERE client_id = $1
+        """,
+        client["firebase_uid"],
+    )
+
+    total_billed = float(row["total_billed"])
+    total_paid = float(row["total_paid"])
+
+    return {
+        "client_id": client_id,
+        "total_billed": round(total_billed, 2),
+        "total_paid": round(total_paid, 2),
+        "balance_due": round(total_billed - total_paid, 2),
+        "superbill_count": row["superbill_count"],
+        "submitted_count": row["submitted_count"],
+        "paid_count": row["paid_count"],
+        "outstanding_count": row["outstanding_count"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Denial Management — list all, generate appeal, update denial/appeal status
+# ---------------------------------------------------------------------------
+
+
+@router.get("/billing/denials")
+async def list_denials(
+    request: Request,
+    category: Optional[str] = Query(None),
+    appeal_status: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """List all denials for the practice, with optional filters."""
+    from rcm_client import get_rcm_client, RCMError
+
+    pool = await get_pool()
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    try:
+        result = await rcm.list_denials(
+            category=category,
+            appeal_status=appeal_status,
+            limit=limit,
+            offset=offset,
+        )
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="denials_listed",
+        resource_type="denial",
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        metadata={"category": category, "appeal_status": appeal_status},
+    )
+
+    return result
+
+
+@router.post("/billing/denials/{denial_id}/generate-appeal")
+async def generate_denial_appeal(
+    denial_id: str,
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Generate an AI appeal letter for a specific denial."""
+    from rcm_client import get_rcm_client, RCMError
+
+    pool = await get_pool()
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    try:
+        result = await rcm.generate_appeal(denial_id)
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="appeal_generated",
+        resource_type="denial",
+        resource_id=denial_id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+
+    return result
+
+
+@router.patch("/billing/denials/{denial_id}")
+async def update_denial(
+    denial_id: str,
+    request: Request,
+    user: dict = Depends(require_practice_member("owner")),
+):
+    """Update a denial record (appeal letter text, appeal status, etc.)."""
+    from rcm_client import get_rcm_client, RCMError
+
+    body = await request.json()
+    pool = await get_pool()
+    rcm = await get_rcm_client(pool)
+    if not rcm:
+        raise HTTPException(400, "RCM service not configured")
+
+    try:
+        result = await rcm.update_denial(denial_id, body)
+    except RCMError as e:
+        raise HTTPException(e.status_code or 502, str(e))
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="denial_updated",
+        resource_type="denial",
+        resource_id=denial_id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        metadata={"fields": list(body.keys())},
+    )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Cron endpoints (called by Cloud Scheduler)
+# ---------------------------------------------------------------------------
+
+# Shared secret for cron endpoint authentication (same pattern as scheduling.py)
+CRON_SECRET = os.getenv("CRON_SECRET", "dev-cron-secret")
+
+
+def _verify_cron_secret(
+    x_cron_secret: str | None = Header(None, alias="X-Cron-Secret"),
+) -> None:
+    """Verify the shared secret for cron endpoints."""
+    if x_cron_secret != CRON_SECRET:
+        raise HTTPException(403, "Invalid cron secret")
+
+
+@router.post("/cron/poll-billing")
+async def cron_poll_billing(
+    request: Request,
+    _: None = Depends(_verify_cron_secret),
+):
+    """Sync claim statuses from trellis-services back to local superbills.
+
+    For each practice with an active billing API key:
+      - Find superbills with claim_status in (submitted, acknowledged, accepted)
+      - Call trellis-services to check each claim's current status
+      - Update local superbill fields (claim_status, claim_adjudicated_at, era_data)
+
+    Returns: { processed, updated }
+    """
+    from rcm_client import get_rcm_client_for_practice, RCMError
+
+    pool = await get_pool()
+
+    # Find all practices with billing configured
+    practices = await pool.fetch(
+        """
+        SELECT id, billing_api_key
+        FROM practices
+        WHERE billing_api_key IS NOT NULL
+          AND billing_api_key != ''
+        """
+    )
+
+    processed = 0
+    updated = 0
+
+    for practice in practices:
+        practice_id = str(practice["id"])
+
+        try:
+            rcm = await get_rcm_client_for_practice(pool, practice_id)
+            if not rcm:
+                continue
+
+            # Get superbills with non-terminal claim statuses
+            superbills = await pool.fetch(
+                """
+                SELECT id, claim_external_id
+                FROM superbills
+                WHERE clinician_id IN (
+                    SELECT uid FROM users WHERE practice_id = $1::uuid
+                )
+                AND claim_status IN ('submitted', 'acknowledged', 'accepted')
+                AND claim_external_id IS NOT NULL
+                """,
+                practice_id,
+            )
+
+            for sb in superbills:
+                sb_id = sb["id"]
+                claim_external_id = sb["claim_external_id"]
+                processed += 1
+
+                try:
+                    # Fetch claim details from trellis-services
+                    claim_data = await rcm.get_claim(claim_external_id)
+                    if not claim_data:
+                        continue
+
+                    new_status = claim_data.get("current_status") or claim_data.get("status")
+                    if not new_status:
+                        continue
+
+                    # Build update fields
+                    update_parts = []
+                    params: list = [sb_id]
+                    idx = 2
+
+                    # Always update claim_status
+                    update_parts.append(f"claim_status = ${idx}")
+                    params.append(new_status)
+                    idx += 1
+
+                    # Set adjudicated_at for terminal statuses
+                    if new_status in ("paid", "denied", "partially_paid"):
+                        adjudicated = claim_data.get("adjudicated_at")
+                        if adjudicated:
+                            update_parts.append(f"claim_adjudicated_at = ${idx}::timestamptz")
+                            params.append(adjudicated)
+                            idx += 1
+                        else:
+                            update_parts.append("claim_adjudicated_at = NOW()")
+
+                    # If there's ERA data, fetch and store it
+                    if new_status in ("paid", "denied", "partially_paid"):
+                        try:
+                            era_data = await rcm.get_era(claim_external_id)
+                            if era_data:
+                                update_parts.append(f"era_data = ${idx}")
+                                params.append(json.dumps(era_data) if isinstance(era_data, dict) else era_data)
+                                idx += 1
+
+                                # Update amount_paid from ERA
+                                paid = era_data.get("payment_amount")
+                                if paid is not None:
+                                    update_parts.append(f"amount_paid = ${idx}")
+                                    params.append(float(paid))
+                                    idx += 1
+                        except RCMError:
+                            pass  # ERA not available yet — that's okay
+
+                    if update_parts:
+                        await pool.execute(
+                            f"""
+                            UPDATE superbills
+                            SET {', '.join(update_parts)}, updated_at = NOW()
+                            WHERE id = $1
+                            """,
+                            *params,
+                        )
+                        updated += 1
+
+                        logger.info(
+                            "Superbill %s claim status synced: %s",
+                            sb_id,
+                            new_status,
+                        )
+
+                except RCMError as e:
+                    logger.warning(
+                        "Error checking claim %s for superbill %s: %s",
+                        claim_external_id,
+                        sb_id,
+                        e,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Unexpected error syncing superbill %s", sb_id
+                    )
+
+        except Exception:
+            logger.exception(
+                "Error processing practice %s in poll-billing", practice_id
+            )
+
+    logger.info(
+        "poll-billing complete: processed=%d updated=%d",
+        processed,
+        updated,
+    )
+    return {"processed": processed, "updated": updated}

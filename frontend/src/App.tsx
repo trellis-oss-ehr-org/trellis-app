@@ -23,8 +23,10 @@ import TreatmentPlanEditorPage from "./pages/TreatmentPlanEditorPage";
 import BillingPage from "./pages/BillingPage";
 import FinancialReportsPage from "./pages/FinancialReportsPage";
 import ClaimReviewPage from "./pages/ClaimReviewPage";
+import DenialManagementPage from "./pages/DenialManagementPage";
 import AuditLogPage from "./pages/AuditLogPage";
 import CredentialingPage from "./pages/CredentialingPage";
+import PayerEnrollmentPage from "./pages/PayerEnrollmentPage";
 import TeamManagementPage from "./pages/TeamManagementPage";
 import ClientDashboardPage from "./pages/client/ClientDashboardPage";
 import ClientAppointmentsPage from "./pages/client/ClientAppointmentsPage";
@@ -120,9 +122,11 @@ function AppRoutes() {
         <Route path="/billing" element={<OwnerRoute><BillingPage /></OwnerRoute>} />
         <Route path="/billing/reports" element={<OwnerRoute><FinancialReportsPage /></OwnerRoute>} />
         <Route path="/billing/claims/:superbillId/review" element={<OwnerRoute><ClaimReviewPage /></OwnerRoute>} />
+        <Route path="/billing/denials" element={<OwnerRoute><DenialManagementPage /></OwnerRoute>} />
         <Route path="/settings/practice" element={<PracticeSettingsPage />} />
         <Route path="/settings/team" element={<OwnerRoute><TeamManagementPage /></OwnerRoute>} />
         <Route path="/settings/credentialing" element={<OwnerRoute><CredentialingPage /></OwnerRoute>} />
+        <Route path="/settings/payer-enrollment" element={<OwnerRoute><PayerEnrollmentPage /></OwnerRoute>} />
         <Route path="/settings/audit-log" element={<OwnerRoute><AuditLogPage /></OwnerRoute>} />
       </Route>
 

@@ -27,6 +27,7 @@ All secrets live in gitignored `.env` files. **Read these files whenever you nee
 - `OAUTH_TOKEN_ENCRYPTION_KEY` — Fernet key for encrypting stored OAuth tokens
 - `FRONTEND_BASE_URL`
 - `CRON_SECRET`
+- `TRELLIS_SERVICES_URL` — URL of the trellis-services server (for license key validation and paid features)
 
 **`backend/relay/.env`** contains:
 - `DATABASE_URL`
@@ -41,6 +42,7 @@ All secrets live in gitignored `.env` files. **Read these files whenever you nee
 - `VITE_FIREBASE_STORAGE_BUCKET`
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`
 - `VITE_FIREBASE_APP_ID`
+- `VITE_FIREBASE_VAPID_KEY` — FCM Web Push certificate public key (for push notifications)
 
 ---
 
@@ -147,7 +149,12 @@ firebase projects:addfirebase $(gcloud config get-value project)
   - Click **Add new provider** to add **Email/Password** (flip the switch, save)
 - Walk the user through getting their Firebase web config from Firebase Console → Project Settings → Your apps → Web app:
   - They need: `apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`
-- Save Firebase config values — these go into `frontend/.env` in Phase 6 (never into CLAUDE.md)
+- Walk the user through generating a Web Push certificate (for push notifications):
+  1. In Firebase Console → Project Settings → Cloud Messaging tab
+  2. Scroll to **Web Push certificates**
+  3. Click **Generate key pair**
+  4. Copy the public key (long base64 string starting with `B`) — this is the VAPID key
+- Save Firebase config values and VAPID key — these go into `frontend/.env` in Phase 6 (never into CLAUDE.md)
 
 ### PHASE 5 — Google OAuth (per-user account connection)
 - Walk the user through creating an OAuth 2.0 Client ID:
@@ -200,6 +207,7 @@ VITE_FIREBASE_PROJECT_ID=<PROJECT_ID>
 VITE_FIREBASE_STORAGE_BUCKET=<PROJECT_ID>.firebasestorage.app
 VITE_FIREBASE_MESSAGING_SENDER_ID=<from Phase 4>
 VITE_FIREBASE_APP_ID=<from Phase 4>
+VITE_FIREBASE_VAPID_KEY=<from Phase 4>
 ```
 
 ### PHASE 7 — Local Verification
@@ -274,6 +282,8 @@ steps:
       - 'VITE_FIREBASE_MESSAGING_SENDER_ID=<sender_id>'
       - '--build-arg'
       - 'VITE_FIREBASE_APP_ID=<app_id>'
+      - '--build-arg'
+      - 'VITE_FIREBASE_VAPID_KEY=<vapid_key>'
       - '--build-arg'
       - 'VITE_API_URL=<Cloud Run API URL>'
       - '--build-arg'
@@ -431,6 +441,87 @@ Once Trellis is fully deployed and working, offer to customize the look and feel
 
 ### Final Step
 Do a final update to the "My Deployment" table with non-secret values (project ID, region, URLs, workspace status). Confirm all `.env` files are created and populated with secrets. The user now has a fully deployed Trellis instance. This CLAUDE.md has the setup instructions; the `.env` files (gitignored) have the secrets.
+
+---
+
+## Updating Trellis
+
+When a user says "Update Trellis" or similar, follow this process. The goal is to let the user choose which upstream changes they want, then apply them cleanly — no git knowledge required.
+
+**IMPORTANT — Same audience rules apply.** The user is a non-technical clinician. Never mention branches, commits, merge conflicts, or diffs. Speak in terms of "updates," "improvements," and "new features." Handle all git operations silently.
+
+### Step 1 — Fetch upstream changes
+```bash
+git fetch origin main
+```
+
+### Step 2 — Review the diff
+Read the full diff between the user's current code and upstream:
+```bash
+git diff HEAD..origin/main
+```
+Also check for new migration files:
+```bash
+git diff HEAD..origin/main --name-only -- db/migrations/
+```
+
+### Step 3 — Summarize changes for the user
+Group changes into plain-English items. For each one, explain:
+- **What it does** (one sentence, no jargon)
+- **What part of the app it affects** (e.g., "the scheduling page," "how notes are generated," "the client portal")
+- Whether it includes a **database change** (migration)
+
+Example:
+> Here's what's new since your last update:
+>
+> 1. **Improved appointment reminders** — Reminders now include the session type and location. Affects the emails your clients receive.
+> 2. **Bug fix: session notes not saving** — Fixed an issue where notes could fail to save if the session was longer than 2 hours. Affects note generation.
+> 3. **New: group therapy attendance tracking** — Adds a new page for tracking attendance in group sessions. Includes a database update.
+>
+> Which of these would you like to install? You can say "all of them" or pick specific ones.
+
+### Step 4 — Apply selected changes
+For each change the user wants:
+
+1. **If they want everything:** Stash local changes, merge upstream, pop stash, resolve any conflicts (keeping local branding and deployment config).
+   ```bash
+   git stash
+   git merge origin/main
+   git stash pop
+   ```
+   If there are conflicts in branding files (`index.css`, `LandingPage.tsx`, `ClinicianShell.tsx`, `ClientShell.tsx`, files in `public/`) or `CLAUDE.md`, keep the local version. For all other conflicts, take the upstream version and verify nothing breaks.
+
+2. **If they want specific items:** Identify the relevant commits and cherry-pick them one at a time, resolving conflicts the same way.
+   ```bash
+   git cherry-pick <commit-hash>
+   ```
+
+3. **After applying:** Run `make install` in case dependencies changed.
+
+### Step 5 — Apply new migrations
+If any selected changes included new migration files:
+1. Read `DATABASE_URL` from `backend/api/.env`
+2. Apply only the new migrations in order:
+   ```bash
+   PGPASSWORD="<DB_PASSWORD>" psql "host=<CLOUD_SQL_IP> dbname=trellis user=postgres" -f db/migrations/<new_migration>.sql
+   ```
+3. Confirm each migration succeeded before moving on.
+
+### Step 6 — Verify and redeploy
+1. Run `make dev` and verify the app still loads correctly.
+2. If the user has Cloud Run deployed (check "My Deployment" table), ask: "Would you like me to deploy these updates to your live site too?"
+3. If yes, rebuild and redeploy following the Phase 8 instructions above.
+
+### Handling branding conflicts
+The user may have customized branding files (Phase 13). If an upstream update touches the same files:
+- **Never silently overwrite branding.** Always keep the user's branding.
+- If the upstream change is functional (not just styling), manually apply the functional change to the user's branded version of the file.
+- Tell the user: "One of the updates touches a file you've customized with your branding. I've applied the functional change while keeping your design intact."
+
+### If something goes wrong
+- If a merge or cherry-pick fails badly: `git merge --abort` or `git cherry-pick --abort`, then tell the user what happened in plain English and try a different approach.
+- Never leave the repo in a dirty/conflicted state. Always resolve or abort before stopping.
+- If you can't cleanly apply a change, skip it and tell the user: "I wasn't able to apply [update name] without affecting your customizations. You may want to try again after the next upstream release."
 
 ---
 

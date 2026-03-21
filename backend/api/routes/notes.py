@@ -907,6 +907,59 @@ async def sign_note(
         )
         # Don't fail the note signing if superbill generation fails
 
+    # Auto-submit claim to RCM service if enabled
+    if superbill_id:
+        try:
+            from rcm_client import get_rcm_client_for_practice
+            from db import get_practice_billing_settings
+
+            pool = await get_pool()
+            # Determine practice_id from clinician
+            clinician_row = await pool.fetchrow(
+                "SELECT practice_id FROM clinicians WHERE firebase_uid = $1",
+                user["uid"],
+            )
+            if clinician_row and clinician_row["practice_id"]:
+                practice_id_for_rcm = str(clinician_row["practice_id"])
+                billing_settings = await get_practice_billing_settings(practice_id_for_rcm)
+                if billing_settings and billing_settings.get("billing_auto_submit"):
+                    rcm = await get_rcm_client_for_practice(pool, practice_id_for_rcm)
+                    if rcm and superbill_result:
+                        # Minimal claim data for auto-submit
+                        claim_data = {
+                            "superbill_id": superbill_id,
+                            "date_of_service": superbill_result.get("date_of_service"),
+                            "cpt_code": superbill_result.get("cpt_code"),
+                            "diagnosis_codes": superbill_result.get("diagnosis_codes", []),
+                            "fee": superbill_result.get("fee", 0),
+                            "auto_submitted": True,
+                        }
+                        result = await rcm.submit_claim(claim_data)
+                        claim_ext_id = result.get("claim_id") or result.get("id")
+                        if claim_ext_id:
+                            from datetime import datetime as _dt, timezone as _tz
+                            await pool.execute(
+                                """
+                                UPDATE superbills
+                                SET claim_external_id = $1,
+                                    claim_status = $2,
+                                    claim_submitted_at = $3,
+                                    status = 'submitted',
+                                    date_submitted = $3
+                                WHERE id = $4::uuid
+                                """,
+                                claim_ext_id,
+                                result.get("status", "submitted"),
+                                _dt.now(_tz.utc),
+                                superbill_id,
+                            )
+                        logger.info(
+                            "Claim auto-submitted for superbill %s: claim_id=%s",
+                            superbill_id[:8], claim_ext_id,
+                        )
+        except Exception as e:
+            logger.warning("Auto-submit claim failed (non-fatal) for superbill %s: %s", superbill_id, e)
+
     # C10: Auto-generate treatment plan when intake assessment (narrative/90791) is signed
     treatment_plan_id = None
     if note["format"] == "narrative":

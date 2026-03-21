@@ -3,6 +3,9 @@ import { Link, useParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { ICD10Search } from "../components/billing/ICD10Search";
 import ERADetailView, { ERAData } from "../components/billing/ERADetailView";
+import ClaimStatusBadge from "../components/billing/ClaimStatusBadge";
+import EligibilityCard from "../components/billing/EligibilityCard";
+import AppealDraftModal from "../components/billing/AppealDraftModal";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -108,7 +111,11 @@ export default function ClaimReviewPage() {
     denial_codes: { reason_code: string; description: string; group_code: string }[];
     suggestions: { action: string; description: string; auto_fixable: boolean; priority: string }[];
     can_auto_resubmit: boolean;
+    denial_ids: string[];
   } | null>(null);
+
+  // Appeal modal
+  const [appealModalDenialId, setAppealModalDenialId] = useState<string | null>(null);
 
   // Editable form state
   const [cptCode, setCptCode] = useState("");
@@ -204,11 +211,15 @@ export default function ClaimReviewPage() {
       .get<any>(`/api/billing/denials/${superbillId}`)
       .then((data) => {
         if (!cancelled) {
+          // Extract denial IDs from the response (list of denials for this superbill)
+          const denialsList = data.denials || [];
+          const ids = denialsList.map((d: any) => d.id).filter(Boolean);
           setDenialInfo({
-            denial_category: data.denial_category,
+            denial_category: data.denial_category || (denialsList[0]?.denial_category ?? null),
             denial_codes: data.denial_codes || [],
             suggestions: data.suggestions || [],
             can_auto_resubmit: data.can_auto_resubmit || false,
+            denial_ids: ids,
           });
         }
       })
@@ -407,19 +418,7 @@ export default function ClaimReviewPage() {
             <h1 className="font-display text-2xl font-bold text-warm-800">
               Claim Review
             </h1>
-            <span
-              className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                superbill.status === "generated"
-                  ? "bg-blue-50 text-blue-700"
-                  : superbill.status === "submitted"
-                  ? "bg-amber-50 text-amber-700"
-                  : superbill.status === "paid"
-                  ? "bg-teal-50 text-teal-700"
-                  : "bg-red-50 text-red-700"
-              }`}
-            >
-              {superbill.status.charAt(0).toUpperCase() + superbill.status.slice(1)}
-            </span>
+            <ClaimStatusBadge status={superbill.status} size="md" />
           </div>
           <p className="text-sm text-warm-500">
             {superbill.client_name} &middot; {formatDate(superbill.date_of_service)} &middot;{" "}
@@ -558,14 +557,31 @@ export default function ClaimReviewPage() {
                   </div>
                 )}
               </div>
-              <Link
-                to="/billing/denials"
-                className="shrink-0 px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
-              >
-                Correct & Resubmit
-              </Link>
+              <div className="shrink-0 flex flex-col gap-2">
+                {denialInfo.denial_ids?.length > 0 && denialInfo.denial_ids[0] && (
+                  <button
+                    onClick={() => setAppealModalDenialId(denialInfo.denial_ids[0]!)}
+                    className="px-4 py-2 text-sm font-medium rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+                  >
+                    Generate Appeal
+                  </button>
+                )}
+                <Link
+                  to="/billing/denials"
+                  className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors text-center"
+                >
+                  Correct & Resubmit
+                </Link>
+              </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Eligibility Check */}
+      {superbill.client_id && (
+        <div className="mb-5">
+          <EligibilityCard clientId={superbill.client_id} />
         </div>
       )}
 
@@ -1019,6 +1035,16 @@ export default function ClaimReviewPage() {
           </div>
         </div>
       </div>
+
+      {/* Appeal Draft Modal */}
+      {appealModalDenialId && (
+        <AppealDraftModal
+          denialId={appealModalDenialId}
+          isOpen={true}
+          onClose={() => setAppealModalDenialId(null)}
+          onUpdate={loadData}
+        />
+      )}
     </div>
   );
 }

@@ -47,6 +47,9 @@ from db import (
     get_upcoming_appointments_for_reminders,
     mark_reminder_sent,
     mark_sms_reminder_sent,
+    mark_push_reminder_sent,
+    get_push_tokens_for_appointments,
+    delete_push_subscription_by_token,
     get_client_sms_info,
     get_practice_billing_settings,
     get_past_due_appointments,
@@ -1146,6 +1149,7 @@ async def cron_send_reminders(
     upcoming = await get_upcoming_appointments_for_reminders(hours_ahead=24)
     sent_count = 0
     sms_sent_count = 0
+    push_sent_count = 0
     errors = 0
 
     # Check if SMS is available (practice has billing connected + sms_enabled)
@@ -1253,7 +1257,47 @@ async def cron_send_reminders(
             logger.error("Failed to send reminder for appointment %s: %s", appt["id"], e)
             errors += 1
 
-    return {"sent_count": sent_count, "sms_sent_count": sms_sent_count, "errors": errors}
+    # --- Push notifications (free via FCM) ---
+    # Batch-fetch tokens for all upcoming appointments, then send
+    appt_ids = [a["id"] for a in upcoming]
+    push_tokens_map = await get_push_tokens_for_appointments(appt_ids)
+    if push_tokens_map:
+        from push_service import send_push_notifications
+
+        for appt in upcoming:
+            tokens = push_tokens_map.get(appt["id"], [])
+            if not tokens:
+                continue
+            try:
+                appt_dt = datetime.fromisoformat(appt["scheduled_at"])
+                push_body = (
+                    f"{appt_dt.strftime('%A, %B %d')} at {appt_dt.strftime('%I:%M %p')}"
+                )
+                failed = await send_push_notifications(
+                    tokens=tokens,
+                    title="Appointment Reminder",
+                    body=push_body,
+                )
+                # Clean up stale tokens
+                for bad_token in failed:
+                    await delete_push_subscription_by_token(bad_token)
+
+                await mark_push_reminder_sent(appt["id"])
+                push_sent_count += 1
+
+                await log_audit_event(
+                    user_id=None,
+                    action="push_reminder_sent",
+                    resource_type="appointment",
+                    resource_id=appt["id"],
+                    ip_address=_client_ip(request),
+                    user_agent="Cloud Scheduler",
+                    metadata={"token_count": len(tokens), "failed_count": len(failed)},
+                )
+            except Exception as e:
+                logger.error("Failed to send push reminder for appointment %s: %s", appt["id"], e)
+
+    return {"sent_count": sent_count, "sms_sent_count": sms_sent_count, "push_sent_count": push_sent_count, "errors": errors}
 
 
 @router.post("/cron/check-no-shows")

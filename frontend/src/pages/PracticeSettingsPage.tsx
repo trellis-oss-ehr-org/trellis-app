@@ -4,6 +4,7 @@ import { useApi } from "../hooks/useApi";
 import { useAuth } from "../hooks/useAuth";
 import { useGoogleOAuth } from "../hooks/useGoogleOAuth";
 import { Button } from "../components/Button";
+import StripeOnboardingCard from "../components/billing/StripeOnboardingCard";
 import type { PracticeProfile } from "../types";
 
 const US_STATES = [
@@ -116,6 +117,12 @@ function Input({
   );
 }
 
+interface LicenseStatus {
+  has_key: boolean;
+  key_preview?: string;
+  features: Record<string, boolean>;
+}
+
 export default function PracticeSettingsPage() {
   const api = useApi();
   const { isOwner, practiceType } = useAuth();
@@ -127,6 +134,13 @@ export default function PracticeSettingsPage() {
   const google = useGoogleOAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [googleToast, setGoogleToast] = useState("");
+
+  // License key state
+  const [licenseKey, setLicenseKey] = useState("");
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
+  const [licenseLoading, setLicenseLoading] = useState(false);
+  const [licenseError, setLicenseError] = useState("");
+  const [licenseSuccess, setLicenseSuccess] = useState("");
 
   useEffect(() => {
     if (searchParams.get("google") === "connected") {
@@ -168,6 +182,57 @@ export default function PracticeSettingsPage() {
     }
     load();
   }, [api]);
+
+  // Load license status
+  useEffect(() => {
+    if (!isOwner) return;
+    async function loadLicense() {
+      try {
+        const data = await api.get<LicenseStatus>("/api/practice/license-key");
+        setLicenseStatus(data);
+      } catch {
+        // No license configured — that's fine
+      }
+    }
+    loadLicense();
+  }, [api, isOwner]);
+
+  async function handleActivateKey() {
+    if (!licenseKey.trim()) return;
+    setLicenseLoading(true);
+    setLicenseError("");
+    setLicenseSuccess("");
+    try {
+      const data = await api.put<{ features: Record<string, boolean> }>(
+        "/api/practice/license-key",
+        { key: licenseKey.trim() },
+      );
+      setLicenseStatus({ has_key: true, key_preview: licenseKey.trim().slice(0, 16) + "...", features: data.features });
+      setLicenseKey("");
+      setLicenseSuccess("License key activated successfully");
+      setTimeout(() => setLicenseSuccess(""), 5000);
+    } catch (e: any) {
+      setLicenseError(e.message || "Failed to activate key");
+    } finally {
+      setLicenseLoading(false);
+    }
+  }
+
+  async function handleRemoveKey() {
+    setLicenseLoading(true);
+    setLicenseError("");
+    setLicenseSuccess("");
+    try {
+      await api.del("/api/practice/license-key");
+      setLicenseStatus({ has_key: false, features: {} });
+      setLicenseSuccess("License key removed");
+      setTimeout(() => setLicenseSuccess(""), 5000);
+    } catch (e: any) {
+      setLicenseError(e.message || "Failed to remove key");
+    } finally {
+      setLicenseLoading(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -577,6 +642,83 @@ export default function PracticeSettingsPage() {
           </div>
         </Section>}
       </div>
+
+      {/* Stripe Payment Processing (owner/solo, not cash-only) */}
+      {(practiceType === "solo" || isOwner) && !form.cash_only && (
+        <div className="mt-6">
+          <StripeOnboardingCard />
+        </div>
+      )}
+
+      {/* Services & License Key (owner only) */}
+      {isOwner && (
+        <div className="bg-white rounded-2xl border border-warm-100 shadow-sm mt-6">
+          <div className="px-6 py-6">
+            <h2 className="font-semibold text-warm-800 mb-1">Services</h2>
+            <p className="text-warm-400 text-xs mb-4">
+              Activate premium features like automated SMS reminders and revenue cycle management with a license key.
+            </p>
+
+            {licenseStatus?.has_key ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-teal-50 rounded-xl border border-teal-200">
+                  <div>
+                    <p className="text-sm font-medium text-teal-800">License key active</p>
+                    <p className="text-xs text-teal-600 mt-0.5 font-mono">{licenseStatus.key_preview}</p>
+                    <div className="flex gap-2 mt-2">
+                      {Object.entries(licenseStatus.features)
+                        .filter(([, v]) => v)
+                        .map(([feature]) => (
+                          <span
+                            key={feature}
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800"
+                          >
+                            {feature === "sms" ? "SMS Reminders" : feature === "rcm" ? "Revenue Cycle" : feature}
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleRemoveKey}
+                    disabled={licenseLoading}
+                    className="text-xs text-red-500 hover:text-red-700 font-medium transition-colors"
+                  >
+                    {licenseLoading ? "Removing..." : "Remove"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    value={licenseKey}
+                    onChange={(e) => { setLicenseKey(e.target.value); setLicenseError(""); }}
+                    placeholder="Paste your license key here"
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-warm-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition-all text-warm-800 font-mono text-sm"
+                  />
+                  <button
+                    onClick={handleActivateKey}
+                    disabled={licenseLoading || !licenseKey.trim()}
+                    className="px-4 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {licenseLoading ? "Validating..." : "Activate"}
+                  </button>
+                </div>
+                <p className="text-xs text-warm-400">
+                  Don't have a key? Visit our website to subscribe to SMS reminders or revenue cycle management.
+                </p>
+              </div>
+            )}
+
+            {licenseError && (
+              <p className="mt-3 text-sm text-red-600">{licenseError}</p>
+            )}
+            {licenseSuccess && (
+              <p className="mt-3 text-sm text-teal-600 font-medium">{licenseSuccess}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Save bar */}
       <div className="mt-6 flex items-center gap-4">

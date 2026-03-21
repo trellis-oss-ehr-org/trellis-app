@@ -4,6 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { useApi } from "../../hooks/useApi";
 import { useMinuteTick } from "../../hooks/useSessionWindow";
 import { isInSessionWindow } from "../../lib/sessionWindow";
+import { PushNotificationCard } from "../../components/PushNotificationCard";
 import type { Appointment } from "../../types";
 
 interface DocStatus {
@@ -45,6 +46,12 @@ function formatTime(iso: string): string {
   });
 }
 
+interface ClientBalance {
+  total_billed: number;
+  total_paid: number;
+  outstanding_balance: number;
+}
+
 interface ClientProfile {
   exists: boolean;
   status?: "active" | "discharged" | "inactive";
@@ -62,6 +69,7 @@ export default function ClientDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [clientProfile, setClientProfile] = useState<ClientProfile | null>(null);
+  const [clientBalance, setClientBalance] = useState<ClientBalance | null>(null);
   useMinuteTick();
 
   const displayName = user?.displayName?.split(" ")[0] || "there";
@@ -107,6 +115,16 @@ export default function ClientDashboardPage() {
           setReconfirmations(reconf.appointments || []);
         } catch {
           // No pending reconfirmations
+        }
+
+        // Get client balance
+        if (user?.uid) {
+          try {
+            const bal = await api.get<ClientBalance>(`/api/billing/client-balance/${user.uid}`);
+            setClientBalance(bal);
+          } catch {
+            // No balance data
+          }
         }
       } catch (err) {
         console.error("Failed to load dashboard data:", err);
@@ -311,6 +329,13 @@ export default function ClientDashboardPage() {
         </div>
       )}
 
+      {/* Push notification opt-in — only for active clients */}
+      {!isDischarged && (
+        <div className="mb-6">
+          <PushNotificationCard />
+        </div>
+      )}
+
       {/* Documents needing signature — only for active clients */}
       {!isDischarged && docStatus && docStatus.pending > 0 && (
         <div className="mb-6">
@@ -341,6 +366,44 @@ export default function ClientDashboardPage() {
                   Sign Documents
                 </Link>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Outstanding balance widget */}
+      {!isDischarged && clientBalance && clientBalance.outstanding_balance > 0 && (
+        <div className="mb-6">
+          <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-5 md:p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center shrink-0">
+                  <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-amber-600">
+                    <path
+                      d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-warm-800">Outstanding Balance</p>
+                  <p className="text-lg font-bold text-amber-600">
+                    ${clientBalance.outstanding_balance.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+              <Link
+                to="/client/billing"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#635BFF] text-white text-sm font-semibold rounded-xl hover:bg-[#524DDB] transition-colors"
+              >
+                Pay Now
+                <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                </svg>
+              </Link>
             </div>
           </div>
         </div>

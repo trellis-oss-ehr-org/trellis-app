@@ -1,6 +1,7 @@
+import { useState, useEffect } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { logOut } from "../lib/firebase";
+import { logOut, getFirebaseMessaging, onMessage } from "../lib/firebase";
 import { SessionTimeoutWarning } from "./SessionTimeoutWarning";
 
 const NAV_ITEMS = [
@@ -64,6 +65,22 @@ const NAV_ITEMS = [
 export function ClientShell() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [banner, setBanner] = useState<string | null>(null);
+
+  // Foreground push notification handler — show auto-dismissing banner
+  useEffect(() => {
+    const messaging = getFirebaseMessaging();
+    if (!messaging) return;
+
+    const unsubscribe = onMessage(messaging, (payload) => {
+      const text = payload.notification?.body || payload.notification?.title || "New notification";
+      setBanner(text);
+      const timer = setTimeout(() => setBanner(null), 5000);
+      return () => clearTimeout(timer);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   async function handleSignOut() {
     await logOut();
@@ -154,6 +171,28 @@ export function ClientShell() {
 
       {/* Main content */}
       <main className="flex-1 overflow-auto pb-20 md:pb-0">
+        {banner && (
+          <div className="mx-4 mt-3 px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-800 flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+            <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-teal-600 shrink-0">
+              <path
+                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {banner}
+            <button
+              onClick={() => setBanner(null)}
+              className="ml-auto text-teal-500 hover:text-teal-700"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+              </svg>
+            </button>
+          </div>
+        )}
         <Outlet />
       </main>
 
