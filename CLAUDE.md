@@ -398,31 +398,8 @@ gcloud scheduler jobs create http trellis-reconfirmation \
 ```
 - Only create Meet recording fetch job if Workspace/delegation is enabled (Phase 10)
 
-### PHASE 12b — SMS Reminders (optional)
-- Ask: "Would you like to enable text message appointment reminders?"
-- If **yes**:
-  - Tell the user to sign up at https://telnyx.com/sign-up
-  - They need to: create an account, buy a phone number, and get their API key from the Telnyx dashboard
-  - Once they have the API key and phone number, they can enter them in Trellis: Settings → Practice → SMS Reminders
-  - Or paste the values into the terminal and you can call the API directly:
-    ```bash
-    curl -X PUT "<API_URL>/api/sms/settings" \
-      -H "Authorization: Bearer <firebase_token>" \
-      -H "Content-Type: application/json" \
-      -d '{"telnyx_api_key": "<key>", "telnyx_from_number": "+15551234567", "sms_enabled": true}'
-    ```
-  - Create the SMS reminder cron job:
-    ```bash
-    gcloud scheduler jobs create http trellis-sms-reminders \
-      --location=us-central1 \
-      --schedule="0 9 * * *" \
-      --uri="<API_URL>/api/cron/send-reminders" \
-      --http-method=POST \
-      --headers="X-Cron-Secret=<CRON_SECRET>" \
-      --time-zone="America/New_York"
-    ```
-  - Send a test SMS from the settings page to verify it works
-- If **no**: skip — email reminders still work without SMS
+### PHASE 12b — SMS Reminders
+SMS reminders are configured entirely within the app (Settings → Practice → SMS Reminders). Do not walk the user through this during setup — they can set it up themselves when ready. The SMS cron job should be created during Phase 12 if the user has already configured SMS in-app.
 
 ### PHASE 13 — Branding & Landing Page (optional)
 Once Trellis is fully deployed and working, offer to customize the look and feel. This is a fun, creative step — take your time with it.
