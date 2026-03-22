@@ -220,7 +220,7 @@ async def update_practice(practice_id: str, **kwargs) -> None:
         "name", "type", "tax_id", "npi", "phone", "email", "website",
         "address_line1", "address_line2", "city", "state", "zip",
         "accepted_insurances", "timezone", "sms_enabled", "cash_only",
-        "booking_enabled",
+        "booking_enabled", "require_client_invite",
     }
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
@@ -259,6 +259,7 @@ def _practice_to_dict(r) -> dict:
         "timezone": r["timezone"],
         "cash_only": r.get("cash_only", False) or False,
         "booking_enabled": r.get("booking_enabled", True) if r.get("booking_enabled") is not None else True,
+        "require_client_invite": r.get("require_client_invite", False) or False,
         "licensed_features": r.get("licensed_features") or {},
         "created_at": r["created_at"].isoformat(),
         "updated_at": r["updated_at"].isoformat(),
@@ -700,6 +701,7 @@ async def upsert_practice_profile(clinician_uid: str, **kwargs) -> str:
         "address_city": "city", "address_state": "state", "address_zip": "zip",
         "accepted_insurances": "accepted_insurances", "timezone": "timezone",
         "cash_only": "cash_only", "booking_enabled": "booking_enabled",
+        "require_client_invite": "require_client_invite",
     }
     _CLINICIAN_LEVEL = {
         "clinician_name", "credentials", "license_number", "license_state",
@@ -745,7 +747,8 @@ async def get_practice_profile(clinician_uid: str | None = None) -> dict | None:
                    p.city AS practice_city, p.state AS practice_state,
                    p.zip AS practice_zip, p.accepted_insurances,
                    p.timezone, p.type AS practice_type,
-                   p.sms_enabled, p.cash_only, p.booking_enabled
+                   p.sms_enabled, p.cash_only, p.booking_enabled,
+                   p.require_client_invite
             FROM clinicians c
             JOIN practices p ON p.id = c.practice_id
             WHERE c.firebase_uid = $1
@@ -763,7 +766,8 @@ async def get_practice_profile(clinician_uid: str | None = None) -> dict | None:
                    p.city AS practice_city, p.state AS practice_state,
                    p.zip AS practice_zip, p.accepted_insurances,
                    p.timezone, p.type AS practice_type,
-                   p.sms_enabled, p.cash_only, p.booking_enabled
+                   p.sms_enabled, p.cash_only, p.booking_enabled,
+                   p.require_client_invite
             FROM clinicians c
             JOIN practices p ON p.id = c.practice_id
             WHERE c.practice_role = 'owner' AND c.status = 'active'
@@ -807,6 +811,7 @@ async def get_practice_profile(clinician_uid: str | None = None) -> dict | None:
             "sms_enabled": r.get("sms_enabled") or False,
             "cash_only": r.get("cash_only") or False,
             "booking_enabled": r.get("booking_enabled", True) if r.get("booking_enabled") is not None else True,
+            "require_client_invite": r.get("require_client_invite", False) or False,
             "created_at": r["created_at"].isoformat(),
             "updated_at": r["updated_at"].isoformat(),
         }
@@ -873,21 +878,41 @@ async def create_encounter(
 ) -> str:
     """Insert an encounter and return its UUID."""
     pool = await get_pool()
-    row = await pool.fetchrow(
-        """
-        INSERT INTO encounters (client_id, clinician_id, type, source, transcript, data, duration_sec, status)
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
-        RETURNING id
-        """,
-        client_id,
-        clinician_id,
-        encounter_type,
-        source,
-        transcript,
-        __to_json(data),
-        duration_sec,
-        status,
-    )
+    token_estimate = len(transcript) // 4 if transcript else None
+    try:
+        row = await pool.fetchrow(
+            """
+            INSERT INTO encounters (client_id, clinician_id, type, source, transcript, data, duration_sec, status, token_estimate)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
+            RETURNING id
+            """,
+            client_id,
+            clinician_id,
+            encounter_type,
+            source,
+            transcript,
+            __to_json(data),
+            duration_sec,
+            status,
+            token_estimate,
+        )
+    except Exception:
+        # Fallback if token_estimate column doesn't exist yet (migration 027 not applied)
+        row = await pool.fetchrow(
+            """
+            INSERT INTO encounters (client_id, clinician_id, type, source, transcript, data, duration_sec, status)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+            RETURNING id
+            """,
+            client_id,
+            clinician_id,
+            encounter_type,
+            source,
+            transcript,
+            __to_json(data),
+            duration_sec,
+            status,
+        )
     return str(row["id"])
 
 
@@ -903,11 +928,13 @@ async def update_encounter(
     sets = []
     vals = []
     idx = 1
+    token_est_pending = None
 
     if transcript is not None:
         sets.append(f"transcript = ${idx}")
         vals.append(transcript)
         idx += 1
+        token_est_pending = len(transcript) // 4 if transcript else None
     if data is not None:
         sets.append(f"data = ${idx}::jsonb")
         vals.append(__to_json(data))
@@ -927,6 +954,17 @@ async def update_encounter(
     vals.append(encounter_id)
     query = f"UPDATE encounters SET {', '.join(sets)} WHERE id = ${idx}::uuid"
     await pool.execute(query, *vals)
+
+    # Try to update token_estimate if the column exists (migration 027)
+    if token_est_pending is not None:
+        try:
+            await pool.execute(
+                "UPDATE encounters SET token_estimate = $1 WHERE id = $2::uuid",
+                token_est_pending,
+                encounter_id,
+            )
+        except Exception:
+            pass  # Column doesn't exist yet
 
 
 async def get_client_transcripts(client_id: str, limit: int = 20) -> list[dict]:
@@ -957,6 +995,103 @@ async def get_client_transcripts(client_id: str, limit: int = 20) -> list[dict]:
     ]
     results.reverse()
     return results
+
+
+# ---------------------------------------------------------------------------
+# Context Compaction
+# ---------------------------------------------------------------------------
+
+async def get_client_summary(client_id: str) -> dict | None:
+    """Fetch the compressed portrait and version for a client."""
+    pool = await get_pool()
+    try:
+        row = await pool.fetchrow(
+            "SELECT context_summary, summary_version FROM clients WHERE firebase_uid = $1",
+            client_id,
+        )
+    except Exception:
+        # Migration 027 not applied yet — columns don't exist
+        return None
+    if not row:
+        return None
+    return {
+        "context_summary": row["context_summary"],
+        "summary_version": row["summary_version"],
+    }
+
+
+async def get_unsummarized_encounters(client_id: str) -> list[dict]:
+    """Fetch encounters not yet folded into the client portrait, oldest-first."""
+    pool = await get_pool()
+    try:
+        rows = await pool.fetch(
+            """
+            SELECT id, type, source, transcript, token_estimate, data, created_at
+            FROM encounters
+            WHERE client_id = $1 AND summary_version IS NULL AND transcript != ''
+            ORDER BY created_at ASC
+            """,
+            client_id,
+        )
+    except Exception:
+        # Migration 027 not applied yet — fall back to fetching recent encounters
+        rows = await pool.fetch(
+            """
+            SELECT id, type, source, transcript, data, created_at
+            FROM encounters
+            WHERE client_id = $1 AND transcript != ''
+            ORDER BY created_at ASC
+            LIMIT 20
+            """,
+            client_id,
+        )
+        return [
+            {
+                "id": str(r["id"]),
+                "type": r["type"],
+                "source": r["source"],
+                "transcript": r["transcript"],
+                "token_estimate": None,
+                "data": r["data"],
+                "created_at": r["created_at"].isoformat(),
+            }
+            for r in rows
+        ]
+    return [
+        {
+            "id": str(r["id"]),
+            "type": r["type"],
+            "source": r["source"],
+            "transcript": r["transcript"],
+            "token_estimate": r["token_estimate"],
+            "data": r["data"],
+            "created_at": r["created_at"].isoformat(),
+        }
+        for r in rows
+    ]
+
+
+async def update_client_summary(client_id: str, summary: str, version: int) -> None:
+    """Store the updated client portrait."""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE clients SET context_summary = $1, summary_version = $2 WHERE firebase_uid = $3",
+        summary,
+        version,
+        client_id,
+    )
+
+
+async def mark_encounters_summarized(encounter_ids: list[str], version: int) -> None:
+    """Mark encounters as folded into a specific portrait version."""
+    if not encounter_ids:
+        return
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE encounters SET summary_version = $1 WHERE id = ANY($2::uuid[])",
+        version,
+        encounter_ids,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2414,6 +2549,7 @@ def _client_full_to_dict(r) -> dict:
         "status": r["status"],
         "intake_completed_at": r["intake_completed_at"].isoformat() if r["intake_completed_at"] else None,
         "documents_completed_at": r["documents_completed_at"].isoformat() if r["documents_completed_at"] else None,
+        "docs_warning_dismissed": r.get("docs_warning_dismissed", False),
         "discharged_at": r["discharged_at"].isoformat() if r["discharged_at"] else None,
         "created_at": r["created_at"].isoformat(),
         "updated_at": r["updated_at"].isoformat(),
@@ -3190,7 +3326,7 @@ async def is_practice_initialized() -> dict:
     """Check if any practice exists. Returns initialization status + practice info."""
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT id, name, type, cash_only, booking_enabled FROM practices ORDER BY created_at ASC LIMIT 1"
+        "SELECT id, name, type, cash_only, booking_enabled, require_client_invite FROM practices ORDER BY created_at ASC LIMIT 1"
     )
     if not row:
         return {"initialized": False}
@@ -3201,6 +3337,7 @@ async def is_practice_initialized() -> dict:
         "practice_type": row["type"],
         "cash_only": row.get("cash_only") or False,
         "booking_enabled": row.get("booking_enabled", True) if row.get("booking_enabled") is not None else True,
+        "require_client_invite": row.get("require_client_invite", False) or False,
     }
 
 

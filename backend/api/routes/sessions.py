@@ -52,6 +52,7 @@ from db import (
     get_active_treatment_plan,
     get_pool,
 )
+from compaction import trigger_compaction
 from note_generator import generate_note
 from gcal import (
     get_meet_recording_for_event,
@@ -672,6 +673,9 @@ async def process_single_appointment(
         )
 
         logger.info("Created encounter %s for appointment %s", encounter_id, appt_id)
+
+        # Fire-and-forget compaction check
+        asyncio.create_task(trigger_compaction(appointment["client_id"]))
 
         # Step 7: Link encounter to appointment and mark as completed
         await update_appointment_recording(

@@ -5,6 +5,7 @@ HIPAA Access Control:
   - Intake data stored as JSONB in encounters table
   - All submissions logged to audit_events
 """
+import asyncio
 import sys
 from datetime import datetime, timezone
 
@@ -15,6 +16,7 @@ from auth import get_current_user
 
 sys.path.insert(0, "../shared")
 from db import create_encounter, upsert_client, log_audit_event
+from compaction import trigger_compaction
 from alerts import notify_bd_new_intake
 
 router = APIRouter()
@@ -202,6 +204,9 @@ async def submit_intake(
         data=payload.model_dump(),
         encounter_id=encounter_id,
     )
+
+    # Fire-and-forget compaction check
+    asyncio.create_task(trigger_compaction(user["uid"]))
 
     return {
         "status": "received",

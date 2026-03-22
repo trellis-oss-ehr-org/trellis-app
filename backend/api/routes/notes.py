@@ -24,6 +24,7 @@ Endpoints:
   - GET  /api/notes/{note_id}/amendments  — list amendments for a note
   - GET  /api/notes/{note_id}/signature   — get stored signature for signing
 """
+import asyncio
 import hashlib
 import json
 import logging
@@ -50,6 +51,7 @@ from db import (
     log_audit_event,
     create_encounter,
 )
+from compaction import trigger_compaction
 from note_generator import generate_note, regenerate_note, generate_note_from_dictation
 from note_pdf import generate_note_pdf
 from treatment_plan_generator import generate_treatment_plan as ai_generate_plan
@@ -390,6 +392,9 @@ async def generate_note_from_dictation_endpoint(
         status="complete",
         duration_sec=duration_sec,
     )
+
+    # Fire-and-forget compaction check
+    asyncio.create_task(trigger_compaction(body.client_id))
 
     # Generate structured note from dictation via Gemini
     try:

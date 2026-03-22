@@ -38,6 +38,7 @@ export interface AuthContextValue {
   inviteToken: string | null;
   inviteInfo: InviteInfo | null;
   needsClinicianPicker: boolean;
+  registrationError: string | null;
   completeRegistration: (clinicianId: string) => Promise<void>;
 }
 
@@ -68,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [inviteToken] = useState<string | null>(getInviteTokenFromURL);
   const [inviteInfo, setInviteInfo] = useState<InviteInfo | null>(null);
   const [needsClinicianPicker, setNeedsClinicianPicker] = useState(false);
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
 
   const autoRegisterAttempted = useRef(false);
 
@@ -188,6 +190,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRegistered(true);
         if (data.practice_id) setPracticeId(data.practice_id);
         if (data.practice_role) setPracticeRole(data.practice_role);
+      } else if (res.status === 403) {
+        const data = await res.json().catch(() => ({}));
+        setRegistrationError(data.detail || "Registration not allowed.");
       }
     } catch {
       // Registration failed — leave unregistered
@@ -327,7 +332,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user, loading, role, roleLoading, registered, getIdToken, setRole, registerRole,
         switchRole, practiceId, practiceType, practiceRole, isOwner, clinician,
-        practiceInitialized, cashOnly, bookingEnabled, licensedFeatures, inviteToken, inviteInfo, needsClinicianPicker, completeRegistration,
+        practiceInitialized, cashOnly, bookingEnabled, licensedFeatures, inviteToken, inviteInfo, needsClinicianPicker, registrationError, completeRegistration,
       }}
     >
       {children}

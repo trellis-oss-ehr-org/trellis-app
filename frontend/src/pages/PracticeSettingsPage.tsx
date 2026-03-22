@@ -46,6 +46,7 @@ interface FormData {
   accepted_insurances: string[];
   cash_only: boolean;
   booking_enabled: boolean;
+  require_client_invite: boolean;
   session_rate: string;
   intake_rate: string;
   sliding_scale: boolean;
@@ -77,6 +78,7 @@ function profileToForm(p: PracticeProfile): FormData {
     accepted_insurances: p.accepted_insurances || [],
     cash_only: p.cash_only || false,
     booking_enabled: p.booking_enabled !== false,
+    require_client_invite: p.require_client_invite || false,
     session_rate: p.session_rate != null ? String(p.session_rate) : "",
     intake_rate: p.intake_rate != null ? String(p.intake_rate) : "",
     sliding_scale: p.sliding_scale || false,
@@ -168,7 +170,7 @@ export default function PracticeSettingsPage() {
             license_number: "", license_state: "", npi: "", tax_id: "",
             specialties: "", bio: "", phone: "", email: "", website: "",
             address_line1: "", address_line2: "", address_city: "",
-            address_state: "", address_zip: "", cash_only: false, booking_enabled: true, accepted_insurances: [],
+            address_state: "", address_zip: "", cash_only: false, booking_enabled: true, require_client_invite: false, accepted_insurances: [],
             session_rate: "", intake_rate: "", sliding_scale: false,
             sliding_scale_min: "", default_session_duration: "53",
             intake_duration: "53", timezone: "America/New_York",
@@ -296,6 +298,7 @@ export default function PracticeSettingsPage() {
         address_zip: form.address_zip || null,
         cash_only: form.cash_only,
         booking_enabled: form.booking_enabled,
+        require_client_invite: form.require_client_invite,
         accepted_insurances: form.cash_only
           ? []
           : form.accepted_insurances.length
@@ -580,6 +583,18 @@ export default function PracticeSettingsPage() {
             <div>
               <span className="text-sm font-medium text-warm-800">Allow client booking</span>
               <p className="text-xs text-warm-500 mt-0.5">When disabled, clients cannot book appointments from their portal</p>
+            </div>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer p-3 bg-warm-50 rounded-lg border border-warm-200">
+            <input
+              type="checkbox"
+              checked={form.require_client_invite}
+              onChange={(e) => set("require_client_invite", e.target.checked)}
+              className="w-4 h-4 rounded border-warm-300 text-teal-600 focus:ring-teal-500"
+            />
+            <div>
+              <span className="text-sm font-medium text-warm-800">Require invitation to sign up</span>
+              <p className="text-xs text-warm-500 mt-0.5">Only clients you've invited can create an account</p>
             </div>
           </label>
           {!form.cash_only && (

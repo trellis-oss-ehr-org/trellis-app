@@ -46,6 +46,21 @@ const NAV_ITEMS = [
     ),
   },
   {
+    to: "/client/journal",
+    label: "Journal",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+        <path
+          d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ),
+  },
+  {
     to: "/client/billing",
     label: "Billing",
     icon: (
@@ -121,14 +136,19 @@ export function ClientShell() {
 
         <div className="px-4 py-4 border-t border-warm-100">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-teal-50 rounded-full flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 bg-teal-50 rounded-full flex items-center justify-center shrink-0 overflow-hidden">
               {user?.photoURL ? (
-                <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full" />
-              ) : (
-                <span className="text-sm font-semibold text-teal-600">
-                  {displayName.charAt(0).toUpperCase()}
-                </span>
-              )}
+                <img
+                  src={user.photoURL}
+                  alt=""
+                  className="w-8 h-8 rounded-full"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : null}
+              <span className={`text-sm font-semibold text-teal-600 ${user?.photoURL ? "hidden" : ""}`}>
+                {displayName.charAt(0).toUpperCase()}
+              </span>
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-warm-700 truncate">
@@ -151,14 +171,19 @@ export function ClientShell() {
           Trellis
         </p>
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 bg-teal-50 rounded-full flex items-center justify-center">
+          <div className="w-7 h-7 bg-teal-50 rounded-full flex items-center justify-center overflow-hidden">
             {user?.photoURL ? (
-              <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full" />
-            ) : (
-              <span className="text-xs font-semibold text-teal-600">
-                {displayName.charAt(0).toUpperCase()}
-              </span>
-            )}
+              <img
+                src={user.photoURL}
+                alt=""
+                className="w-7 h-7 rounded-full"
+                referrerPolicy="no-referrer"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            ) : null}
+            <span className={`text-xs font-semibold text-teal-600 ${user?.photoURL ? "hidden" : ""}`}>
+              {displayName.charAt(0).toUpperCase()}
+            </span>
           </div>
           <button
             onClick={handleSignOut}

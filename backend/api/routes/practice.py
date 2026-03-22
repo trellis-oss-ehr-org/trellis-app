@@ -15,6 +15,7 @@ HIPAA Access Control:
   - PATCH /practice/team/{id}  — owner only
   - All reads and writes logged to audit_events
 """
+import asyncio
 import logging
 import os
 import sys
@@ -107,6 +108,7 @@ class PracticeProfileUpdate(BaseModel):
     practice_type: str | None = None
     cash_only: bool | None = None
     booking_enabled: bool | None = None
+    require_client_invite: bool | None = None
 
 
 class InviteClinicianRequest(BaseModel):
@@ -149,6 +151,7 @@ async def practice_status():
         "practice_type": info["practice_type"],
         "cash_only": info.get("cash_only", False),
         "booking_enabled": info.get("booking_enabled", True),
+        "require_client_invite": info.get("require_client_invite", False),
     }
 
 
@@ -313,6 +316,14 @@ async def register_user(
         if not client_invite and email:
             client_invite = await get_client_invitation_by_email(email)
 
+        # Gate: if practice requires invitations and none found, reject
+        if not client_invite and practice_info.get("require_client_invite"):
+            raise HTTPException(
+                403,
+                "This practice requires an invitation to sign up. "
+                "Please contact your clinician to receive an invite.",
+            )
+
         if client_invite:
             primary_clinician_uid = client_invite["clinician_firebase_uid"]
             practice_id = client_invite["practice_id"]
@@ -346,6 +357,18 @@ async def register_user(
             full_name=body.display_name,
             primary_clinician_id=primary_clinician_uid,
         )
+
+        # Auto-generate consent document package if we have a clinician
+        if primary_clinician_uid:
+            from routes.documents import auto_generate_consent_package
+            asyncio.create_task(
+                auto_generate_consent_package(
+                    client_id=user["uid"],
+                    client_email=email,
+                    client_name=body.display_name or email,
+                    clinician_uid=primary_clinician_uid,
+                )
+            )
 
     await log_audit_event(
         user_id=user["uid"],
@@ -556,7 +579,7 @@ async def update_profile(
         "practice_name", "tax_id", "phone", "email", "website",
         "address_line1", "address_line2", "address_city", "address_state",
         "address_zip", "accepted_insurances", "timezone", "practice_type", "cash_only",
-        "booking_enabled",
+        "booking_enabled", "require_client_invite",
     }
     practice_fields = {k: v for k, v in fields.items() if k in _PRACTICE_ONLY_FIELDS}
 

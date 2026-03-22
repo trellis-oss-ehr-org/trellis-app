@@ -23,7 +23,8 @@ from auth import verify_token
 from api_client import get_practice_profile
 from booking_emails import send_clinician_confirmation, send_client_confirmation
 from config import ALLOWED_ORIGINS
-from context import compress_mid_session, get_context_for_client
+from compaction import get_client_context
+from context import compress_mid_session
 from gemini_session import build_system_prompt, run_voice_session
 
 # Add shared module to path (works both locally and in Docker)
@@ -31,7 +32,8 @@ from pathlib import Path as _Path
 _here = _Path(__file__).resolve().parent
 sys.path.insert(0, str(_here.parent / "shared"))  # local dev: backend/shared
 sys.path.insert(0, str(_here / "shared"))          # Docker: /app/shared
-from db import close_pool, create_encounter, get_client_transcripts, update_encounter, get_client, get_clinician
+from db import close_pool, create_encounter, update_encounter, get_client, get_clinician
+from compaction import trigger_compaction
 from alerts import notify_bd_new_intake
 
 from request_logging import RequestLoggingMiddleware
@@ -109,6 +111,10 @@ async def websocket_session(ws: WebSocket):
             await ws.close(code=4002)
             return
 
+        session_type = auth_msg.get("sessionType", "intake")
+        if session_type not in ("intake", "journal"):
+            session_type = "intake"
+
         intake_mode = auth_msg.get("intakeMode", "standard")
         if intake_mode not in ("standard", "iop"):
             intake_mode = "standard"
@@ -177,19 +183,19 @@ async def websocket_session(ws: WebSocket):
         }
 
         # ── Create encounter record ──
+        enc_type = "portal" if session_type == "journal" else "intake"
         encounter_id = await create_encounter(
             client_id=client_id,
-            encounter_type="intake",
+            encounter_type=enc_type,
             source="voice",
         )
         logger.info("Created encounter %s for client %s", encounter_id, client_id)
 
-        # ── Load prior context ──
-        prior_transcripts = await get_client_transcripts(client_id)
-        context = await get_context_for_client(prior_transcripts)
+        # ── Load prior context (compressed portrait + recent encounters) ──
+        context = await get_client_context(client_id)
         logger.info(
-            "Loaded %d prior transcripts for client %s (context: %d chars)",
-            len(prior_transcripts), client_id, len(context),
+            "Loaded context for client %s (%d chars)",
+            client_id, len(context),
         )
 
         # ── Send ready ──
@@ -202,12 +208,14 @@ async def websocket_session(ws: WebSocket):
                 context, practice_profile, client_insurance,
                 client_email=session_context.get("client_email"),
                 intake_mode=intake_mode,
+                session_type=session_type,
             )
 
-            logger.info("Starting Gemini Live connection (prompt: %d chars)", len(system_prompt))
+            logger.info("Starting Gemini Live connection (prompt: %d chars, type: %s)", len(system_prompt), session_type)
             session_active = [True]
             segment, exit_reason = await run_voice_session(
                 ws, system_prompt, session_active, session_context,
+                session_type=session_type,
             )
             full_transcript += segment
 
@@ -222,8 +230,7 @@ async def websocket_session(ws: WebSocket):
                     break
 
                 # Compress all context + current transcript
-                raw_prior = "\n\n".join(t["transcript"] for t in prior_transcripts)
-                context = await compress_mid_session(raw_prior, full_transcript)
+                context = await compress_mid_session(context, full_transcript)
                 logger.info("Compression complete, new context: %d chars", len(context))
                 continue
             else:
@@ -253,13 +260,17 @@ async def websocket_session(ws: WebSocket):
                     encounter_id, len(full_transcript), duration,
                 )
 
-                # Alert BD of new warm lead
-                await notify_bd_new_intake(
-                    client_name=client_id,  # best we have from voice
-                    source="voice",
-                    transcript=full_transcript,
-                    encounter_id=encounter_id,
-                )
+                # Fire-and-forget compaction check
+                asyncio.create_task(trigger_compaction(client_id))
+
+                # Alert BD of new warm lead (intake only)
+                if session_type == "intake":
+                    await notify_bd_new_intake(
+                        client_name=client_id,  # best we have from voice
+                        source="voice",
+                        transcript=full_transcript,
+                        encounter_id=encounter_id,
+                    )
             except Exception as e:
                 logger.error("Failed to save encounter: %s: %s", type(e).__name__, e)
 

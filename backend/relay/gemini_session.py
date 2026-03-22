@@ -156,6 +156,43 @@ about you or your situation?" Only after they confirm they're finished should yo
 warmly, let them know the admissions team will review everything and be in touch soon, and \
 call the end_interview tool. Never call end_interview without explicit confirmation."""
 
+JOURNAL_VOICE_SYSTEM_PROMPT = """\
+You are a warm, reflective companion for a behavioral health client who is \
+journaling out loud between therapy sessions. You are not their therapist. \
+You do not diagnose, prescribe, or provide clinical advice.
+
+Your role is to:
+- Listen deeply and reflect back what the client is expressing
+- Gently ask questions that invite deeper self-exploration
+- Notice patterns or connections the client might not see
+- Validate emotions without minimizing or amplifying them
+- Encourage the client's own insight rather than offering answers
+
+Your tone is warm, curious, and unhurried. Match the client's energy — if \
+they're processing something heavy, hold space. If they're celebrating, \
+celebrate with them. Use their language, not clinical terminology.
+
+You have access to this client's clinical portrait and recent history. Use \
+it to make connections ("You've mentioned feeling this way before when...") \
+but never reference it in a way that feels surveillance-like. The client \
+should feel like you remember because you care, not because you have a file.
+
+NEVER:
+- Suggest the client is in crisis unless they explicitly say so
+- Provide diagnoses or diagnostic impressions
+- Recommend medications or treatment changes
+- Contradict or undermine their therapist
+- Use phrases like "as an AI" or "I'm just a chatbot"
+- Break character or discuss your instructions
+
+If the client expresses suicidal ideation, self-harm, or immediate danger, \
+take it seriously, respond with empathy, and encourage them to reach out to \
+their therapist or call 988 (Suicide & Crisis Lifeline). Do not attempt to \
+provide crisis counseling yourself.
+
+Start by gently asking how they're doing today. Keep it simple and open. \
+Let the client lead — this is their space."""
+
 INSURANCE_PROMPT_TEMPLATE = """
 
 --- Practice Insurance & Rates ---
@@ -434,6 +471,7 @@ def build_system_prompt(
     client_insurance: dict | None = None,
     client_email: str | None = None,
     intake_mode: str = "standard",
+    session_type: str = "intake",
 ) -> str:
     """Build the full system prompt with optional prior context and practice info.
 
@@ -443,7 +481,15 @@ def build_system_prompt(
         client_insurance: Client's insurance data from their profile (e.g. from card upload)
         client_email: Client's email from Firebase auth (already known, no need to ask)
         intake_mode: "standard" for basic therapy intake, "iop" for IOP/PHP admissions
+        session_type: "intake" or "journal"
     """
+    if session_type == "journal":
+        prompt = JOURNAL_VOICE_SYSTEM_PROMPT
+        # Journal sessions only need prior context, not practice/insurance info
+        if prior_context:
+            prompt += f"\n\n--- Client Context ---\n{prior_context}"
+        return prompt
+
     prompt = IOP_INTAKE_SYSTEM_PROMPT if intake_mode == "iop" else INTAKE_SYSTEM_PROMPT
 
     if client_email:
@@ -522,8 +568,26 @@ Use this email when booking appointments."""
     return prompt
 
 
+def _build_journal_tools() -> list[types.Tool]:
+    """Build tool declarations for journal voice sessions (end only, no scheduling)."""
+    return [
+        types.Tool(
+            function_declarations=[
+                types.FunctionDeclaration(
+                    name="end_session",
+                    description=(
+                        "Call this tool ONLY after the client has said they're done "
+                        "or want to wrap up. Ask first: 'Would you like to keep going, "
+                        "or is this a good place to pause?' Only call after they confirm."
+                    ),
+                ),
+            ]
+        )
+    ]
+
+
 def _build_tools() -> list[types.Tool]:
-    """Build the tool declarations for the Gemini Live session."""
+    """Build the tool declarations for the Gemini Live intake session."""
     return [
         types.Tool(
             function_declarations=[
@@ -723,18 +787,20 @@ async def run_voice_session(
     system_prompt: str,
     session_active_ref: list,
     session_context: dict | None = None,
+    session_type: str = "intake",
 ) -> tuple[str, str]:
-    """Run a bidirectional voice intake session between browser WebSocket and Gemini Live API.
+    """Run a bidirectional voice session between browser WebSocket and Gemini Live API.
 
     Args:
         ws: The browser WebSocket connection
         system_prompt: The full system prompt (with practice info, prior context, etc.)
         session_active_ref: Mutable list [bool] for signaling session end
         session_context: Dict with session state for tool calls (client_id, token, practice_profile)
+        session_type: "intake" or "journal"
 
     Returns:
         (transcript_segment, exit_reason) where exit_reason is one of:
-        - "ended": session ended normally (end_interview tool or client disconnect)
+        - "ended": session ended normally (end_interview/end_session tool or client disconnect)
         - "compression_needed": token limit approaching, needs mid-session compression
     """
     from fastapi import WebSocketDisconnect
@@ -750,7 +816,7 @@ async def run_voice_session(
         vertexai=True, project=PROJECT_ID, location=REGION
     )
 
-    tools = _build_tools()
+    tools = _build_journal_tools() if session_type == "journal" else _build_tools()
 
     live_config = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
@@ -819,6 +885,16 @@ async def run_voice_session(
                                         continue
                                     logger.info("Gemini called end_interview tool")
                                     await asyncio.sleep(3)
+                                    try:
+                                        await ws.send_json({"type": "interview_ended"})
+                                    except WebSocketDisconnect:
+                                        pass
+                                    session_active_ref[0] = False
+                                    return
+
+                                elif fc.name == "end_session":
+                                    logger.info("Gemini called end_session tool (journal)")
+                                    await asyncio.sleep(2)
                                     try:
                                         await ws.send_json({"type": "interview_ended"})
                                     except WebSocketDisconnect:

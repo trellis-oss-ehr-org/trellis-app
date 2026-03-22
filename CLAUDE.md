@@ -104,7 +104,7 @@ gcloud sql instances describe trellis-db --format='value(ipAddresses[0].ipAddres
 MY_IP=$(curl -s ifconfig.me)
 gcloud sql instances patch trellis-db --authorized-networks=$MY_IP/32
 ```
-- Apply all migrations from `db/migrations/` in order (001 through 027):
+- Apply all migrations from `db/migrations/` in order (001 through 029):
 ```bash
 for f in db/migrations/*.sql; do
   echo "Applying $f..."
@@ -112,7 +112,7 @@ for f in db/migrations/*.sql; do
 done
 ```
 - Note: `psql` may be keg-only on macOS — try `PATH="/opt/homebrew/opt/libpq/bin:$PATH"` if not found
-- Verify tables: `\dt` should show ~28 tables
+- Verify tables: `\dt` should show ~30 tables
 - Save DB IP and password — these go into the `.env` files in Phase 6 (never into CLAUDE.md)
 
 ### PHASE 3 — Service Account
@@ -158,8 +158,10 @@ firebase projects:addfirebase $(gcloud config get-value project)
 
 ### PHASE 5 — Google OAuth (per-user account connection)
 - Walk the user through creating an OAuth 2.0 Client ID:
-  1. Go to GCP Console → APIs & Services → Credentials → Create Credentials → OAuth client ID
-  2. Application type: **Web application**
+  1. Go to GCP Console → APIs & Services → Credentials
+  2. If prompted to configure the **OAuth consent screen** first, do so: choose **External**, add the user's email as a test user, fill in app name "Trellis", and save. This is required before creating credentials.
+  3. Click **Create Credentials → OAuth client ID**
+  4. Application type: **Web application**
   3. Name: "Trellis"
   4. Authorized redirect URIs: add `http://localhost:8080/api/google/callback` (for dev) and the Cloud Run API URL + `/api/google/callback` (for prod, add later)
   5. Copy the Client ID and Client Secret
@@ -429,7 +431,7 @@ Once Trellis is fully deployed and working, offer to customize the look and feel
 - If they share a URL or images, use them as design inspiration
 - **Safe files to edit for branding** (don't touch anything else during this phase):
   - `frontend/src/index.css` — Tailwind theme, CSS variables, colors, fonts
-  - `frontend/src/components/LandingPage.tsx` — public-facing landing/marketing page
+  - `frontend/src/pages/LandingPage.tsx` — public-facing landing/marketing page
   - `frontend/src/components/ClinicianShell.tsx` — app shell header/sidebar (logo, practice name)
   - `frontend/src/components/ClientShell.tsx` — client portal shell
   - `frontend/public/` — logo files, favicon, Open Graph images
@@ -526,7 +528,7 @@ The user may have customized branding files (Phase 13). If an upstream update to
 ---
 
 ## Overview
-Open-source EHR/RCM platform for solo behavioral health therapists. Automates the full workflow: client intake via AI voice agent → scheduling → session recording → note generation → billing document generation. Works with any Google account; Google Workspace only required for telehealth/Meet auto-recording.
+Open-source EHR/RCM platform for solo behavioral health therapists. Automates the full workflow: client intake via AI voice agent → scheduling → session recording → note generation → billing document generation. Includes a client journal with AI reflective feedback (text, voice, and dictation) and a rolling context compaction system that maintains a living clinical portrait per client. Works with any Google account; Google Workspace only required for telehealth/Meet auto-recording.
 
 ## Tech Stack
 - **Frontend:** React 18 + Vite + TypeScript + Tailwind CSS v4 + React Router v7
@@ -551,8 +553,8 @@ trellis-ehr/
 │   ├── api/               # FastAPI REST API
 │   │   └── routes/        # Route modules (intake, documents, scheduling, clients)
 │   ├── relay/             # Gemini Live voice relay (WebSocket)
-│   └── shared/            # Shared Python: db.py, models.py, gcal.py, mailer.py, vision.py, alerts.py
-├── db/migrations/         # Numbered SQL migration files (001-027)
+│   └── shared/            # Shared Python: db.py, compaction.py, gcal.py, mailer.py, vision.py, alerts.py, note_generator.py
+├── db/migrations/         # Numbered SQL migration files (001-029)
 └── creation data/         # Planning docs, pitch deck
 ```
 
@@ -597,25 +599,55 @@ curl -s "https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accoun
 
 ## Architecture Decisions
 
-### Database Schema (27 migrations)
-- **`encounters`** — universal transcript/interaction table. Types: intake, portal, clinical, group. JSONB `data` column for type-specific structured data.
+### Database Schema (29 migrations)
+- **`encounters`** — universal transcript/interaction table. Types: intake, portal, clinical, group. Sources: voice, form, chat, clinician. JSONB `data` column for type-specific structured data. `token_estimate` and `summary_version` columns for context compaction tracking.
 - **`clinical_notes`** — formal notes (SOAP/DAP/narrative) derived from encounters. Signing workflow: draft → review → signed → amended.
-- **`clients`** — central client profile. Firebase UID, demographics, contact, insurance fields.
-- **`document_packages` / `documents`** — onboarding paperwork with e-signature. SHA-256 content hashing.
+- **`clients`** — central client profile. Firebase UID, demographics, contact, insurance fields. `context_summary` (rolling AI portrait), `summary_version` (compaction counter), `docs_warning_dismissed` (suppress unsigned docs warning).
+- **`practices`** — practice-level settings. Includes `require_client_invite` (gate client registration to invited-only).
+- **`document_packages` / `documents`** — onboarding paperwork with e-signature. SHA-256 content hashing. Auto-generated on client registration.
 - **`audit_events`** — append-only HIPAA audit log (no UPDATE/DELETE).
 - **`clinician_availability` / `appointments`** — scheduling with Calendar event IDs, Meet links, recurrence.
 - **`recurring_groups` / group_enrollments / group_sessions / group_attendance`** — group therapy.
 
 ### Voice Relay
-- Intake-only. Audio is pass-through (browser ↔ Gemini), not recorded or stored.
+- Supports two session types: `intake` (clinical intake with scheduling tools) and `journal` (reflective companion for between-session journaling).
+- Audio is pass-through (browser ↔ Gemini), not recorded or stored.
 - Gemini Live transcribes both sides in real-time.
-- Context injection: prior transcripts loaded from encounters table. Raw if <50K tokens, compressed via Gemini Flash if >50K.
+- Context injection: `get_client_context()` returns the compressed client portrait + recent unsummarized encounters.
 - Mid-session compression at ~100K tokens: pause, compress, reopen Gemini Live. Browser WebSocket stays open.
-- Gemini Live tool calling: `get_available_slots` and `book_appointment` tools.
+- Intake tools: `end_interview`, `get_available_slots`, `book_appointment`.
+- Journal tools: `end_session` only (no scheduling). Uses a reflective companion system prompt.
+- Voice journal sessions generate a reflection summary on completion and create a new text journal thread.
 
 ### Email Sending
 - Gmail API via per-user OAuth or service account domain-wide delegation (Workspace only)
 - Sender address: the clinician's connected Google email, or a delegated Workspace address
+- All `send_email()` calls should pass `clinician_uid` to use OAuth credentials
+
+### Context Compaction (`backend/shared/compaction.py`)
+- Maintains a persistent, incrementally-enriched clinical portrait per client in `clients.context_summary`.
+- Token-based compaction: triggers when unsummarized encounter tokens exceed 30K. Keeps the most recent ~10K tokens as "hot" (raw), compresses the rest into the portrait.
+- Compaction prompt produces a structured portrait: Identity, Why They Came, Core Themes, Therapeutic Arc, Moments That Matter, Clinical Anchors, How to Be With This Person, Growing Edges.
+- Incremental updates evolve the portrait — themes deepen, moments get replaced only when something more crystallizing surfaces.
+- All AI features pull context via `get_client_context()`: compressed portrait + recent raw encounters.
+- Compaction fires after every encounter save (intake, session recording, journal, clinical notes).
+- Each encounter stores `token_estimate` (chars // 4) and `summary_version` (which compaction cycle folded it in).
+
+### Client Journal
+- Client portal feature: text journaling with optional AI reflective feedback, voice journaling (Gemini Live), and dictation (Vertex STT).
+- Each journal visit creates one encounter (`type='portal'`). Text entries use `source='chat'`, voice sessions use `source='voice'`.
+- AI feedback uses a reflective companion system prompt — warm, non-clinical, crisis-aware.
+- Encounters auto-complete when the client navigates away (frontend `useEffect` cleanup + `visibilitychange`). Stale drafts (>30 min) auto-complete on list fetch.
+- Voice journal sessions generate a reflection summary on completion → creates a new text journal thread with the summary as the first AI message.
+- Full thread is preserved in AI context for the active conversation. Previous journal encounters flow through the standard compaction pipeline.
+- Emotion tags (anxious, calm, sad, hopeful, etc.) stored in encounter `data` JSONB.
+- Clinician sees journal entries in "Between Sessions" section of the client detail page.
+- Clients can delete entries; if already compacted, themes remain in the portrait.
+
+### Auto-generated Consent Documents
+- When a client registers and is linked to a clinician, `auto_generate_consent_package()` fires automatically.
+- Creates 6 consent documents (financial agreement, informed consent, HIPAA notice, telehealth consent, program agreement, release of info) and sends a signing email.
+- Clinicians see an "Unsigned Documents" warning popup when viewing a client with pending signatures. Options: send reminder email, dismiss for this visit, or permanently suppress for this client.
 
 ### asyncpg JSONB Pattern
 - Must configure JSONB codec on pool init (`_init_connection` in db.py)

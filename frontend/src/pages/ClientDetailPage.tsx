@@ -42,6 +42,7 @@ interface ClientDetail {
   status: "active" | "discharged" | "inactive";
   intake_completed_at: string | null;
   documents_completed_at: string | null;
+  docs_warning_dismissed: boolean;
   discharged_at: string | null;
   created_at: string;
   updated_at: string;
@@ -249,6 +250,8 @@ export default function ClientDetailPage() {
   const [treatmentPlan, setTreatmentPlan] = useState<TreatmentPlan | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [docsWarning, setDocsWarning] = useState(false);
+  const [docsWarningAction, setDocsWarningAction] = useState<"idle" | "sending" | "sent" | "dismissing">("idle");
   useMinuteTick();
   const [generatingNoteFor, setGeneratingNoteFor] = useState<string | null>(null);
   const [generatingPlan, setGeneratingPlan] = useState(false);
@@ -460,6 +463,11 @@ export default function ClientDetailPage() {
               `/api/documents/status/${clientData.firebase_uid}`
             );
             setDocStatus(status);
+
+            // Show warning if there are unsigned docs and warning hasn't been dismissed
+            if (status.pending > 0 && !clientData.docs_warning_dismissed) {
+              setDocsWarning(true);
+            }
           } catch {
             // Non-critical
           }
@@ -789,6 +797,70 @@ export default function ClientDetailPage() {
 
   return (
     <div className="px-8 py-8 max-w-5xl">
+      {/* Unsigned documents warning */}
+      {docsWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md mx-4 p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center shrink-0">
+                <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-amber-600">
+                  <path d="M12 9v2m0 4h.01M5.07 19h13.86c1.55 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.18 3 1.73 3z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-display font-semibold text-warm-800">
+                  Unsigned Documents
+                </h3>
+                <p className="text-sm text-warm-500 mt-1">
+                  {client.preferred_name || client.full_name || "This client"} has{" "}
+                  <strong>{docStatus?.pending || 0} document{(docStatus?.pending || 0) !== 1 ? "s" : ""}</strong>{" "}
+                  awaiting signature.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                onClick={async () => {
+                  setDocsWarningAction("sending");
+                  try {
+                    await api.post(`/api/documents/send-reminder/${client.firebase_uid}`, {});
+                    setDocsWarningAction("sent");
+                    setTimeout(() => setDocsWarning(false), 1500);
+                  } catch {
+                    setDocsWarningAction("idle");
+                  }
+                }}
+                disabled={docsWarningAction !== "idle"}
+                className="w-full px-4 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl hover:bg-teal-700 disabled:opacity-50 transition-colors"
+              >
+                {docsWarningAction === "sending" ? "Sending..." : docsWarningAction === "sent" ? "Reminder sent!" : "Send email reminder to client"}
+              </button>
+              <button
+                onClick={() => setDocsWarning(false)}
+                className="w-full px-4 py-2.5 text-sm font-medium text-warm-600 bg-warm-50 rounded-xl hover:bg-warm-100 transition-colors"
+              >
+                OK
+              </button>
+              <button
+                onClick={async () => {
+                  setDocsWarningAction("dismissing");
+                  try {
+                    await api.post(`/api/documents/dismiss-warning/${client.firebase_uid}`, {});
+                  } catch {}
+                  setDocsWarning(false);
+                  setDocsWarningAction("idle");
+                }}
+                disabled={docsWarningAction === "dismissing"}
+                className="w-full px-4 py-2 text-xs text-warm-400 hover:text-warm-500 transition-colors"
+              >
+                Don't show this again for this client
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Back Link */}
       <Link
         to="/clients"
@@ -1364,6 +1436,66 @@ export default function ClientDetailPage() {
             </div>
           )}
         </SectionCard>
+
+        {/* ----------------------------------------------------------------- */}
+        {/* Between Sessions (Journal Entries) */}
+        {/* ----------------------------------------------------------------- */}
+        {(() => {
+          const journalEntries = encounters.filter(
+            (e) => e.type === "portal" && e.source === "chat"
+          );
+          if (journalEntries.length === 0) return null;
+          return (
+            <SectionCard
+              title="Between Sessions"
+              icon={
+                <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+                  <path
+                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              }
+              badge={String(journalEntries.length)}
+            >
+              <div className="divide-y divide-warm-100">
+                {journalEntries.map((enc) => {
+                  const preview = (enc.transcript || "").split("\n")[0].replace(/^Client:\s*/, "");
+                  const emotions = enc.data?.emotions as string[] | undefined;
+                  const turnCount = (enc.transcript || "").split(/\n\n(?:Client:|AI:)/).length;
+                  return (
+                    <div key={enc.id} className="py-3 first:pt-0 last:pb-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          {emotions && emotions.length > 0 && (
+                            <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-warm-50 text-warm-500">
+                              {emotions.join(", ")}
+                            </span>
+                          )}
+                          {turnCount > 1 && (
+                            <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-teal-50 text-teal-600">
+                              {turnCount} exchanges
+                            </span>
+                          )}
+{/* status badges removed — no longer relevant with auto-complete */}
+                        </div>
+                        <span className="text-xs text-warm-400">
+                          {formatDate(enc.created_at)}
+                        </span>
+                      </div>
+                      <p className="text-sm text-warm-600 line-clamp-3">
+                        {preview.length > 300 ? preview.slice(0, 300) + "..." : preview}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </SectionCard>
+          );
+        })()}
 
         {/* ----------------------------------------------------------------- */}
         {/* Encounters */}

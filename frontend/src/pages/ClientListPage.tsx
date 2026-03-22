@@ -34,6 +34,10 @@ export default function ClientListPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [clinicianFilter, setClinicianFilter] = useState("all");
+  const [sortCol, setSortCol] = useState<string>("status");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 25;
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
@@ -64,6 +68,8 @@ export default function ClientListPage() {
 
   const clinicianMap = new Map(clinicians.map((c) => [c.firebase_uid, c.clinician_name || c.email]));
 
+  const STATUS_ORDER: Record<string, number> = { active: 0, inactive: 1, discharged: 2 };
+
   const filtered = clients.filter((c) => {
     if (clinicianFilter !== "all" && c.primary_clinician_id !== clinicianFilter) return false;
     if (!search) return true;
@@ -75,6 +81,41 @@ export default function ClientListPage() {
       (c.payer_name?.toLowerCase().includes(q))
     );
   });
+
+  function toggleSort(col: string) {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
+    setPage(0);
+  }
+
+  const sorted = [...filtered].sort((a, b) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    switch (sortCol) {
+      case "name":
+        return dir * (a.full_name || a.email).localeCompare(b.full_name || b.email);
+      case "status":
+        return dir * ((STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9));
+      case "phone":
+        return dir * (a.phone || "").localeCompare(b.phone || "");
+      case "insurance":
+        return dir * (a.payer_name || "Self-pay").localeCompare(b.payer_name || "Self-pay");
+      case "documents":
+        return dir * ((a.docs_signed / Math.max(a.docs_total, 1)) - (b.docs_signed / Math.max(b.docs_total, 1)));
+      case "next_appt":
+        return dir * (a.next_appointment || "9999").localeCompare(b.next_appointment || "9999");
+      case "last_session":
+        return dir * (a.last_session || "").localeCompare(b.last_session || "");
+      default:
+        return 0;
+    }
+  });
+
+  const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
+  const paged = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -96,6 +137,25 @@ export default function ClientListPage() {
     } finally {
       setInviteLoading(false);
     }
+  }
+
+  function SortHeader({ col, label, className = "" }: { col: string; label: string; className?: string }) {
+    const active = sortCol === col;
+    return (
+      <th
+        onClick={() => toggleSort(col)}
+        className={`text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none transition-colors hover:text-warm-600 ${active ? "text-teal-700" : "text-warm-400"} ${className}`}
+      >
+        <span className="inline-flex items-center gap-1">
+          {label}
+          {active && (
+            <svg viewBox="0 0 12 12" fill="currentColor" className={`w-3 h-3 transition-transform ${sortDir === "desc" ? "rotate-180" : ""}`}>
+              <path d="M6 2l4 5H2l4-5z" />
+            </svg>
+          )}
+        </span>
+      </th>
+    );
   }
 
   return (
@@ -206,7 +266,7 @@ export default function ClientListPage() {
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             placeholder="Search by name, email, or insurance..."
             className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-warm-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition-all text-warm-800 text-sm"
           />
@@ -239,7 +299,7 @@ export default function ClientListPage() {
           <div className="flex items-center justify-center py-16">
             <div className="w-6 h-6 border-2 border-teal-200 border-t-teal-600 rounded-full animate-spin" />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <div className="text-center py-16">
             <div className="w-12 h-12 mx-auto mb-3 bg-warm-50 rounded-full flex items-center justify-center">
               <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-warm-300">
@@ -256,36 +316,22 @@ export default function ClientListPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-warm-100">
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-warm-400 uppercase tracking-wide">
-                    Name
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-warm-400 uppercase tracking-wide">
-                    Status
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-warm-400 uppercase tracking-wide hidden md:table-cell">
-                    Phone
-                  </th>
+                  <SortHeader col="name" label="Name" className="px-6" />
+                  <SortHeader col="status" label="Status" />
+                  <SortHeader col="phone" label="Phone" className="hidden md:table-cell" />
                   {isGroup && isOwner && (
                     <th className="text-left px-4 py-3 text-xs font-semibold text-warm-400 uppercase tracking-wide hidden lg:table-cell">
                       Clinician
                     </th>
                   )}
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-warm-400 uppercase tracking-wide hidden lg:table-cell">
-                    Insurance
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-warm-400 uppercase tracking-wide hidden lg:table-cell">
-                    Documents
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-warm-400 uppercase tracking-wide hidden lg:table-cell">
-                    Next Appt
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-warm-400 uppercase tracking-wide hidden md:table-cell">
-                    Last Session
-                  </th>
+                  <SortHeader col="insurance" label="Insurance" className="hidden lg:table-cell" />
+                  <SortHeader col="documents" label="Documents" className="hidden lg:table-cell" />
+                  <SortHeader col="next_appt" label="Next Appt" className="hidden lg:table-cell" />
+                  <SortHeader col="last_session" label="Last Session" className="hidden md:table-cell" />
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((client) => (
+                {paged.map((client) => (
                   <Link
                     key={client.id}
                     to={`/clients/${client.id}`}
@@ -356,6 +402,34 @@ export default function ClientListPage() {
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 px-2">
+          <p className="text-xs text-warm-400">
+            Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sorted.length)} of {sorted.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-3 py-1.5 text-xs font-medium text-warm-600 bg-white border border-warm-200 rounded-lg hover:bg-warm-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Previous
+            </button>
+            <span className="text-xs text-warm-500">
+              {page + 1} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="px-3 py-1.5 text-xs font-medium text-warm-600 bg-white border border-warm-200 rounded-lg hover:bg-warm-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

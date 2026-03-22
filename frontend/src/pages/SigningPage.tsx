@@ -223,9 +223,12 @@ function SigningFlow() {
             Thank you, {pkg.client_name}. All {pkg.documents.length} documents
             have been signed successfully. Your care team has been notified.
           </p>
-          <p className="text-sm text-warm-400">
-            You may close this window.
-          </p>
+          <a
+            href="/client/dashboard"
+            className="inline-flex items-center gap-2 px-6 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl hover:bg-teal-700 transition-colors"
+          >
+            Go to your portal
+          </a>
         </div>
       </div>
     );

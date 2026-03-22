@@ -34,6 +34,7 @@ from db import (
     get_client_document_signing_status,
     get_client,
     get_practice_profile,
+    get_pool,
     log_audit_event,
 )
 from mailer import send_email
@@ -258,6 +259,7 @@ Please complete these documents before your appointment. If you have questions, 
             subject=f"Documents Ready for Signing — {practice_name}",
             html_body=html,
             text_body=text,
+            clinician_uid=clinician_uid,
         )
 
         await update_package_status(package_id, "sent")
@@ -440,6 +442,7 @@ If you have questions, please contact your care coordinator.
         subject=f"Documents Ready for Signing — {practice_name}",
         html_body=html,
         text_body=text,
+        clinician_uid=user["uid"],
     )
 
     await update_package_status(package_id, "sent")
@@ -613,3 +616,121 @@ async def get_client_doc_status(
     )
 
     return status
+
+
+@router.post("/documents/dismiss-warning/{client_id}")
+async def dismiss_docs_warning(
+    client_id: str,
+    request: Request,
+    user: dict = Depends(require_role("clinician")),
+):
+    """Dismiss the unsigned-documents warning for a specific client."""
+    pool = await get_pool()
+    try:
+        await pool.execute(
+            "UPDATE clients SET docs_warning_dismissed = true WHERE firebase_uid = $1",
+            client_id,
+        )
+    except Exception:
+        # Column may not exist yet (migration 028 not applied)
+        pass
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="dismissed_docs_warning",
+        resource_type="client",
+        resource_id=client_id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+
+    return {"status": "dismissed"}
+
+
+@router.post("/documents/send-reminder/{client_id}")
+async def send_docs_reminder(
+    client_id: str,
+    request: Request,
+    user: dict = Depends(require_role("clinician")),
+):
+    """Send a reminder email to a client about unsigned documents."""
+    client = await get_client(client_id)
+    if not client:
+        raise HTTPException(404, "Client not found")
+
+    status = await get_client_document_signing_status(client_id)
+    pending_packages = [p for p in (status.get("packages") or []) if p["pending"] > 0]
+
+    if not pending_packages:
+        return {"status": "no_pending_documents"}
+
+    client_email = client.get("email")
+    client_name = client.get("preferred_name") or client.get("full_name") or "there"
+    if not client_email:
+        raise HTTPException(400, "Client has no email address on file")
+
+    # Get practice name
+    practice_data = await get_practice_profile(user["uid"])
+    practice_name = (practice_data or {}).get("practice_name", "Trellis")
+
+    # Use the first pending package for the signing link
+    package_id = pending_packages[0]["package_id"]
+    signing_url = f"{FRONTEND_BASE_URL}/sign/{package_id}"
+    pending_count = sum(p["pending"] for p in pending_packages)
+
+    html = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; background: #fafaf9; padding: 24px;">
+        <div style="background: #0f766e; padding: 24px; border-radius: 12px 12px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 20px;">Friendly Reminder</h1>
+            <p style="color: #99f6e4; margin: 4px 0 0; font-size: 14px;">{practice_name}</p>
+        </div>
+        <div style="background: white; padding: 24px; border: 1px solid #e7e5e4; border-top: none;">
+            <p style="color: #44403c; font-size: 16px; line-height: 1.6; margin: 0 0 8px;">
+                Hi {client_name},
+            </p>
+            <p style="color: #44403c; font-size: 15px; line-height: 1.6; margin: 0 0 20px;">
+                You have <strong>{pending_count} document{'s' if pending_count != 1 else ''}</strong>
+                waiting for your signature. Please take a moment to review and sign them when you get a chance.
+            </p>
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="{signing_url}"
+                   style="display: inline-block; background: #0f766e; color: white; font-weight: 600;
+                          font-size: 16px; padding: 14px 32px; border-radius: 8px; text-decoration: none;">
+                    Review &amp; Sign Documents
+                </a>
+            </div>
+        </div>
+        <div style="padding: 16px; text-align: center; border-radius: 0 0 12px 12px; background: #f5f5f4; border: 1px solid #e7e5e4; border-top: none;">
+            <p style="margin: 0; font-size: 13px; color: #78716c;">{practice_name}</p>
+        </div>
+    </div>
+    """
+
+    text = f"""Hi {client_name},
+
+You have {pending_count} document{'s' if pending_count != 1 else ''} waiting for your signature.
+
+Review & Sign: {signing_url}
+
+— {practice_name}
+"""
+
+    await send_email(
+        to=client_email,
+        subject=f"Reminder: Documents Awaiting Your Signature — {practice_name}",
+        html_body=html,
+        text_body=text,
+        clinician_uid=user["uid"],
+    )
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="sent_docs_reminder",
+        resource_type="client",
+        resource_id=client_id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        metadata={"pending_count": pending_count},
+    )
+
+    return {"status": "sent", "pending_count": pending_count}

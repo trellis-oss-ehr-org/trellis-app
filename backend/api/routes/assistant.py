@@ -20,6 +20,8 @@ import os
 import sys
 from datetime import datetime
 
+
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
@@ -27,6 +29,7 @@ from auth import require_role, require_practice_member, is_owner
 
 sys.path.insert(0, "../shared")
 from db import get_pool, log_audit_event
+from compaction import get_client_context
 
 from google import genai
 from google.genai.types import GenerateContentConfig
@@ -158,30 +161,10 @@ async def _query_relevant_data(message: str, clinician_uid: str | None = None) -
     if mentioned_client:
         client_uid = mentioned_client["firebase_uid"]
 
-        # Get encounters for this client
-        encounters = await pool.fetch(
-            """
-            SELECT id, type, source, transcript, data, duration_sec, created_at
-            FROM encounters
-            WHERE client_id = $1
-            ORDER BY created_at DESC
-            LIMIT 20
-            """,
-            client_uid,
-        )
-        context["client_encounters"] = [
-            {
-                "id": str(r["id"]),
-                "type": r["type"],
-                "source": r["source"],
-                "transcript_preview": (r["transcript"] or "")[:500],
-                "full_transcript": r["transcript"] or "",
-                "data": r["data"],
-                "duration_sec": r["duration_sec"],
-                "date": r["created_at"].isoformat(),
-            }
-            for r in encounters
-        ]
+        # Get the client's context portrait + recent encounters
+        client_context_str = await get_client_context(client_uid)
+        if client_context_str:
+            context["client_portrait"] = client_context_str
 
         # Get clinical notes for this client
         notes = await pool.fetch(

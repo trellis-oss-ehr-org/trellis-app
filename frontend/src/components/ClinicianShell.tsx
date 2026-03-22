@@ -207,14 +207,19 @@ export function ClinicianShell() {
 
         <div className="px-4 py-4 border-t border-warm-100">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-teal-50 rounded-full flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 bg-teal-50 rounded-full flex items-center justify-center shrink-0 overflow-hidden">
               {user?.photoURL ? (
-                <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full" />
-              ) : (
-                <span className="text-sm font-semibold text-teal-600">
-                  {displayName.charAt(0).toUpperCase()}
-                </span>
-              )}
+                <img
+                  src={user.photoURL}
+                  alt=""
+                  className="w-8 h-8 rounded-full"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : null}
+              <span className={`text-sm font-semibold text-teal-600 ${user?.photoURL ? "hidden" : ""}`}>
+                {displayName.charAt(0).toUpperCase()}
+              </span>
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-warm-700 truncate">
@@ -237,14 +242,19 @@ export function ClinicianShell() {
           Trellis
         </p>
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 bg-teal-50 rounded-full flex items-center justify-center">
+          <div className="w-7 h-7 bg-teal-50 rounded-full flex items-center justify-center overflow-hidden">
             {user?.photoURL ? (
-              <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full" />
-            ) : (
-              <span className="text-xs font-semibold text-teal-600">
-                {displayName.charAt(0).toUpperCase()}
-              </span>
-            )}
+              <img
+                src={user.photoURL}
+                alt=""
+                className="w-7 h-7 rounded-full"
+                referrerPolicy="no-referrer"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            ) : null}
+            <span className={`text-xs font-semibold text-teal-600 ${user?.photoURL ? "hidden" : ""}`}>
+              {displayName.charAt(0).toUpperCase()}
+            </span>
           </div>
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

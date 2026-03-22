@@ -25,17 +25,20 @@ const SAMPLE_RATE = 16000;
 
 interface UseVoiceSessionOptions {
   intakeMode?: "standard" | "iop";
+  sessionType?: "intake" | "journal";
 }
 
 export function useVoiceSession(options?: UseVoiceSessionOptions): UseVoiceSessionReturn {
   const { user, getIdToken } = useAuth();
   const intakeMode = options?.intakeMode ?? "standard";
+  const sessionType = options?.sessionType ?? "intake";
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [transcript, setTranscript] = useState<string[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isMicActive, setIsMicActive] = useState(false);
 
+  const statusRef = useRef<VoiceStatus>("idle");
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -153,7 +156,7 @@ export function useVoiceSession(options?: UseVoiceSessionOptions): UseVoiceSessi
           JSON.stringify({
             type: "auth",
             token,
-            sessionType: "intake",
+            sessionType,
             clientId: user.uid,
             intakeMode,
           })
@@ -170,6 +173,7 @@ export function useVoiceSession(options?: UseVoiceSessionOptions): UseVoiceSessi
           case "ready":
             setSessionId(msg.sessionId);
             setStatus("active");
+            statusRef.current = "active";
             setIsMicActive(true);
             // Start sending audio
             worklet.port.onmessage = (e) => {
@@ -185,15 +189,18 @@ export function useVoiceSession(options?: UseVoiceSessionOptions): UseVoiceSessi
             break;
           case "interview_ended":
             setStatus("ended");
+            statusRef.current = "ended";
             cleanup();
             break;
           case "complete":
             setStatus("ended");
+            statusRef.current = "ended";
             cleanup();
             break;
           case "error":
             setError(msg.message);
             setStatus("error");
+            statusRef.current = "error";
             cleanup();
             break;
         }
@@ -202,20 +209,23 @@ export function useVoiceSession(options?: UseVoiceSessionOptions): UseVoiceSessi
       ws.onerror = () => {
         setError("Connection error. Please try again.");
         setStatus("error");
+        statusRef.current = "error";
         cleanup();
       };
 
       ws.onclose = (e) => {
-        if (status !== "ended" && status !== "error") {
+        if (statusRef.current !== "ended" && statusRef.current !== "error") {
           if (e.code !== 1000) {
             setError("Connection closed unexpectedly.");
             setStatus("error");
+            statusRef.current = "error";
           }
           cleanup();
         }
       };
 
       setStatus("ready");
+      statusRef.current = "ready";
     } catch (err: any) {
       setError(err.message ?? "Failed to start session");
       setStatus("error");
@@ -224,12 +234,13 @@ export function useVoiceSession(options?: UseVoiceSessionOptions): UseVoiceSessi
   }, [user, getIdToken, cleanup, status]);
 
   const endSession = useCallback(() => {
+    setStatus("ended");
+    statusRef.current = "ended";
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "end" }));
     }
-    wsRef.current?.close();
     cleanup();
-    setStatus("ended");
+    wsRef.current?.close();
   }, [cleanup]);
 
   return {
