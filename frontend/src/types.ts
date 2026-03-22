@@ -245,6 +245,7 @@ export interface PracticeProfile {
   address_zip?: string | null;
   cash_only?: boolean | null;
   booking_enabled?: boolean | null;
+  require_client_invite?: boolean | null;
   accepted_insurances?: string[] | null;
   session_rate?: number | null;
   intake_rate?: number | null;

@@ -154,7 +154,6 @@ function useAutoComplete(encounterId: string | null, api: ReturnType<typeof useA
     const complete = () => {
       if (!idRef.current) return;
       // Use sendBeacon for reliability on page unload
-      const token = document.cookie; // won't work — use fetch instead
       api.post(`/api/journal/${idRef.current}/complete`, {}).catch(() => {});
     };
 
@@ -742,7 +741,7 @@ function VoiceJournalView({ onBack }: { onBack: () => void }) {
     (async () => {
       setReflecting(true);
       try {
-        const res = await api.post<{ encounter_id: string; reflection: string }>(
+        await api.post<{ encounter_id: string; reflection: string }>(
           `/api/journal/from-voice/${sessionId}`,
           {},
         );

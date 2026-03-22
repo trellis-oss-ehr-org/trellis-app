@@ -1463,7 +1463,7 @@ export default function ClientDetailPage() {
             >
               <div className="divide-y divide-warm-100">
                 {journalEntries.map((enc) => {
-                  const preview = (enc.transcript || "").split("\n")[0].replace(/^Client:\s*/, "");
+                  const preview = ((enc.transcript || "").split("\n")[0] ?? "").replace(/^Client:\s*/, "");
                   const emotions = enc.data?.emotions as string[] | undefined;
                   const turnCount = (enc.transcript || "").split(/\n\n(?:Client:|AI:)/).length;
                   return (
