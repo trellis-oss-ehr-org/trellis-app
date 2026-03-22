@@ -143,7 +143,7 @@ gcloud iam service-accounts keys create sa-key.json \
 ```bash
 firebase projects:addfirebase $(gcloud config get-value project)
 ```
-- If `firebase` CLI isn't available, tell the user to go to https://console.firebase.google.com and add their project
+- If `firebase` CLI isn't available, tell the user to go to https://console.firebase.google.com. **Important:** The GCP project won't appear automatically — they need to click **"Console"** in the top-right corner first, then click **Create a project**, and choose **"Add Firebase to Google Cloud project"** to link their existing GCP project.
 - Tell the user to go to Firebase Console → Authentication and click **Get started** first, then:
   - Enable **Google** (it appears on the initial list — click it, flip the switch, pick support email, save)
   - Click **Add new provider** to add **Email/Password** (flip the switch, save)
