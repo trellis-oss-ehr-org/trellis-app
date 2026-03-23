@@ -47,20 +47,39 @@ export function TelehealthConsent({ content, practice: rawPractice }: TemplatePr
       </h2>
       <ul className="list-disc list-inside space-y-1 text-sm text-warm-700">
         <li>
-          Sessions are conducted over HIPAA-compliant, encrypted platforms.
+          Sessions are conducted over HIPAA-compliant, encrypted platforms,
+          which may include Google Meet or other secure video services.
         </li>
         <li>
           You should participate from a private location where others cannot
           overhear.
         </li>
         <li>
-          Sessions may not be recorded by either party without written consent.
+          With your consent, sessions may be recorded for clinical documentation
+          purposes. Your clinician will confirm your preference before any
+          recording begins. You may decline recording at any time without
+          affecting your care.
+        </li>
+        <li>
+          If your practice uses Google Workspace, telehealth sessions via
+          Google Meet may be automatically recorded. Your clinician will inform
+          you of this prior to the session.
         </li>
         <li>
           The same confidentiality protections that apply to in-person services
           apply to telehealth.
         </li>
       </ul>
+
+      <h2 className="text-lg font-semibold text-warm-800 mt-6">
+        AI-Assisted Documentation
+      </h2>
+      <p className="text-sm text-warm-700">
+        Your clinician may use AI technology to assist with generating session
+        notes from telehealth sessions. All AI-generated documentation is
+        reviewed and approved by your clinician before becoming part of your
+        clinical record.
+      </p>
 
       <h2 className="text-lg font-semibold text-warm-800 mt-6">
         Emergency Protocols

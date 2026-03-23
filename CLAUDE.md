@@ -5,14 +5,14 @@
 
 | Key | Value |
 |-----|-------|
-| GCP Project ID | _(not yet configured)_ |
-| Region | _(not yet configured)_ |
-| Service Account | _(not yet configured)_ |
-| Cloud Run API URL | _(not yet configured)_ |
-| Cloud Run Relay URL | _(not yet configured)_ |
-| Cloud Run Frontend URL | _(not yet configured)_ |
+| GCP Project ID | trellis-177416 |
+| Region | us-central1 |
+| Service Account | trellis-backend@trellis-177416.iam.gserviceaccount.com |
+| Cloud Run API URL | https://trellis-api-608286927070.us-central1.run.app |
+| Cloud Run Relay URL | https://trellis-relay-608286927070.us-central1.run.app |
+| Cloud Run Frontend URL | https://trellis-frontend-608286927070.us-central1.run.app |
 | Custom Domain | _(not yet configured)_ |
-| Workspace (telehealth) | _(yes/no — not yet configured)_ |
+| Workspace (telehealth) | no |
 
 ### Secrets Location
 All secrets live in gitignored `.env` files. **Read these files whenever you need credentials** — never ask the user for values that are already there.
@@ -419,7 +419,16 @@ Once Trellis is fully deployed and working, offer to customize the look and feel
 **Note:** This step can use more API credits than the infrastructure phases since design is iterative. If the user is on a subscription plan, let them know they can always come back to this in a future session.
 
 ### Final Step
-Do a final update to the "My Deployment" table with non-secret values (project ID, region, URLs, workspace status). Confirm all `.env` files are created and populated with secrets. The user now has a fully deployed Trellis instance. This CLAUDE.md has the setup instructions; the `.env` files (gitignored) have the secrets.
+Do a final update to the "My Deployment" table with non-secret values (project ID, region, URLs, workspace status). Confirm all `.env` files are created and populated with secrets. The user now has a fully deployed Trellis instance.
+
+**After setup is complete, rewrite this CLAUDE.md** to remove the setup instructions (Phases 0–13) and the "Updating Trellis" section. Replace them with a short "Setup Complete" note:
+
+```markdown
+## Setup
+Setup was completed on [date]. All secrets are in `.env` files (gitignored). To re-run setup from scratch, restore this file from git history (`git checkout origin/main -- CLAUDE.md`).
+```
+
+Keep everything from "## Overview" onward (tech stack, directory layout, dev commands, architecture decisions, conventions, HIPAA safeguards). This prevents future Claude sessions from re-running setup or overwhelming the user with irrelevant instructions. The deployment table at the top should also be preserved.
 
 ---
 

@@ -16,15 +16,22 @@ export function AuthModal({ mode, onClose, prefillEmail }: AuthModalProps) {
   const [isSignUp, setIsSignUp] = useState(mode === "client");
   const [email, setEmail] = useState(prefillEmail || "");
   const [password, setPassword] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleGoogle() {
+    if (isSignUp && !termsAccepted) {
+      setError("Please accept the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
     setError("");
     setLoading(true);
     try {
       await signInWithGoogle();
-      // AuthProvider picks up the state change → RoleRedirect handles navigation
+      if (isSignUp) {
+        sessionStorage.setItem("trellis_terms_accepted", "1");
+      }
       onClose();
     } catch (e: any) {
       setError(e.message ?? "Google sign-in failed");
@@ -35,11 +42,16 @@ export function AuthModal({ mode, onClose, prefillEmail }: AuthModalProps) {
 
   async function handleEmail(e: FormEvent) {
     e.preventDefault();
+    if (isSignUp && !termsAccepted) {
+      setError("Please accept the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
     setError("");
     setLoading(true);
     try {
       if (isSignUp) {
         await signUpWithEmail(email, password);
+        sessionStorage.setItem("trellis_terms_accepted", "1");
       } else {
         await signInWithEmail(email, password);
       }
@@ -159,6 +171,27 @@ export function AuthModal({ mode, onClose, prefillEmail }: AuthModalProps) {
               placeholder="At least 6 characters"
             />
           </div>
+
+          {isSignUp && (
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-warm-300 text-teal-600 focus:ring-teal-500/20"
+              />
+              <span className="text-xs text-warm-500 leading-relaxed">
+                I accept the{" "}
+                <a href="https://trellis-490020.web.app/terms.html" target="_blank" rel="noopener noreferrer" className="text-teal-600 underline hover:text-teal-700">
+                  Terms of Service
+                </a>{" "}
+                and{" "}
+                <a href="https://trellis-490020.web.app/privacy.html" target="_blank" rel="noopener noreferrer" className="text-teal-600 underline hover:text-teal-700">
+                  Privacy Policy
+                </a>
+              </span>
+            </label>
+          )}
 
           {error && (
             <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">

@@ -151,8 +151,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const token = await u.getIdToken();
-    const registerPayload: Record<string, string | null | undefined> = {
+    const termsFlag = sessionStorage.getItem("trellis_terms_accepted") === "1";
+    const registerPayload: Record<string, string | boolean | null | undefined> = {
       display_name: u.displayName,
+      terms_accepted: termsFlag,
     };
 
     if (!initialized) {
@@ -188,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = await res.json();
         setRole(data.role as AppRole);
         setRegistered(true);
+        sessionStorage.removeItem("trellis_terms_accepted");
         if (data.practice_id) setPracticeId(data.practice_id);
         if (data.practice_role) setPracticeRole(data.practice_role);
       } else if (res.status === 403) {
@@ -275,6 +278,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           display_name: user.displayName,
           invite_token: opts?.invite_token,
           primary_clinician_id: opts?.primary_clinician_id,
+          terms_accepted: sessionStorage.getItem("trellis_terms_accepted") === "1",
         }),
       });
       if (!res.ok) {

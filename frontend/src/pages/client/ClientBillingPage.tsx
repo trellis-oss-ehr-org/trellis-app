@@ -123,8 +123,8 @@ export default function ClientBillingPage() {
 
         // Check if practice has Stripe enabled (for Pay Now button)
         try {
-          const stripe = await api.get<{ charges_enabled: boolean }>("/api/billing/stripe/status");
-          setStripeEnabled(stripe.charges_enabled === true);
+          const stripeStatus = await api.get<{ configured: boolean; charges_enabled: boolean }>("/api/billing/stripe/status");
+          setStripeEnabled(stripeStatus.configured === true && stripeStatus.charges_enabled === true);
         } catch {
           // Stripe not set up
         }

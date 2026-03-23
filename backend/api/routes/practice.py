@@ -73,6 +73,7 @@ class RegisterUserRequest(BaseModel):
     display_name: str | None = None
     invite_token: str | None = None
     primary_clinician_id: str | None = None
+    terms_accepted: bool = False
 
 
 class SwitchRoleRequest(BaseModel):
@@ -243,6 +244,7 @@ async def register_user(
         email=email,
         role=role,
         display_name=body.display_name,
+        terms_accepted_at=datetime.now(timezone.utc) if body.terms_accepted else None,
     )
 
     practice_id = None
@@ -382,6 +384,7 @@ async def register_user(
             "practice_id": practice_id,
             "practice_role": practice_role,
             "primary_clinician_uid": primary_clinician_uid,
+            "terms_accepted": body.terms_accepted,
         },
     )
 

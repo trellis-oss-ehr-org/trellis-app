@@ -187,31 +187,16 @@ class RCMClient:
         return await self._request("PATCH", f"/rcm/denials/{denial_id}", json=data)
 
     # ------------------------------------------------------------------
-    # Stripe (payments / payouts)
+    # Stripe (direct — practice's own Stripe account)
     # ------------------------------------------------------------------
 
-    async def stripe_onboard(self, return_url: str, refresh_url: str) -> dict:
-        """POST /rcm/stripe/onboard"""
-        return await self._request(
-            "POST",
-            "/rcm/stripe/onboard",
-            json={"return_url": return_url, "refresh_url": refresh_url},
-        )
-
     async def stripe_status(self) -> dict:
-        """GET /rcm/stripe/onboard/status"""
-        return await self._request("GET", "/rcm/stripe/onboard/status")
+        """GET /rcm/stripe/status"""
+        return await self._request("GET", "/rcm/stripe/status")
 
     async def stripe_payment_link(self, data: dict) -> dict:
         """POST /rcm/stripe/payment-link"""
         return await self._request("POST", "/rcm/stripe/payment-link", json=data)
-
-    async def list_invoices(self) -> list[dict]:
-        """GET /rcm/stripe/invoices"""
-        result = await self._request("GET", "/rcm/stripe/invoices")
-        if isinstance(result, list):
-            return result
-        return result.get("invoices", [])
 
 
 # ------------------------------------------------------------------

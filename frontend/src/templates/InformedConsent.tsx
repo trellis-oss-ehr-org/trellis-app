@@ -64,6 +64,30 @@ export function InformedConsent({ content, practice: rawPractice }: TemplateProp
       </ul>
 
       <h2 className="text-lg font-semibold text-warm-800 mt-6">
+        AI-Assisted Documentation
+      </h2>
+      <p className="text-sm text-warm-700">
+        {practice.practice_name} uses AI technology to assist with clinical
+        documentation. This includes generating draft session notes, treatment
+        plans, and maintaining a clinical summary of your care. All AI-generated
+        content is reviewed, edited, and approved by your clinician before it
+        becomes part of your record. AI tools support your clinician's work —
+        they do not replace clinical judgment.
+      </p>
+
+      <h2 className="text-lg font-semibold text-warm-800 mt-6">
+        Session Recording
+      </h2>
+      <p className="text-sm text-warm-700">
+        With your consent, sessions may be audio-recorded to support accurate
+        clinical documentation. Recordings are used solely for generating session
+        notes and are stored securely within the practice's HIPAA-compliant
+        systems. You may decline recording at any time without affecting your
+        care. Your clinician will confirm your preference before recording any
+        session.
+      </p>
+
+      <h2 className="text-lg font-semibold text-warm-800 mt-6">
         Emergency Procedures
       </h2>
       <p className="text-sm text-warm-700">

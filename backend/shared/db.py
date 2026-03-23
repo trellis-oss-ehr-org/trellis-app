@@ -59,21 +59,30 @@ async def close_pool():
 # Users (roles)
 # ---------------------------------------------------------------------------
 
-async def upsert_user(firebase_uid: str, email: str, role: str, display_name: str | None = None) -> str:
+async def upsert_user(
+    firebase_uid: str,
+    email: str,
+    role: str,
+    display_name: str | None = None,
+    terms_accepted_at=None,
+) -> str:
     """Create or update a user record. Returns the user UUID."""
     pool = await get_pool()
     row = await pool.fetchrow(
         """
-        INSERT INTO users (firebase_uid, email, role, display_name)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO users (firebase_uid, email, role, display_name, terms_accepted_at)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (firebase_uid) DO UPDATE
-            SET email = EXCLUDED.email, display_name = COALESCE(EXCLUDED.display_name, users.display_name)
+            SET email = EXCLUDED.email,
+                display_name = COALESCE(EXCLUDED.display_name, users.display_name),
+                terms_accepted_at = COALESCE(EXCLUDED.terms_accepted_at, users.terms_accepted_at)
         RETURNING id
         """,
         firebase_uid,
         email,
         role,
         display_name,
+        terms_accepted_at,
     )
     return str(row["id"])
 

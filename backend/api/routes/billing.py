@@ -2205,11 +2205,6 @@ async def email_statement(
 # These endpoints proxy requests to the external trellis-services RCM API.
 # They require a configured billing_api_key on the practice.
 
-class StripeOnboardRequest(BaseModel):
-    return_path: str = "/settings/billing"
-    refresh_path: str = "/settings/billing"
-
-
 class PaymentLinkRequest(BaseModel):
     client_id: str
     amount: float
@@ -2615,58 +2610,23 @@ async def create_enrollment(
     return result
 
 
-@router.post("/billing/stripe/onboard")
-async def stripe_onboard(
-    body: StripeOnboardRequest,
-    request: Request,
-    user: dict = Depends(require_practice_member("owner")),
-):
-    """Start Stripe Connect onboarding. Returns a URL to redirect the user to."""
-    from rcm_client import get_rcm_client, RCMError
-    from config import TRELLIS_SERVICES_URL
-
-    frontend_url = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
-    return_url = f"{frontend_url}{body.return_path}"
-    refresh_url = f"{frontend_url}{body.refresh_path}"
-
-    pool = await get_pool()
-    rcm = await get_rcm_client(pool)
-    if not rcm:
-        raise HTTPException(400, "RCM service not configured")
-
-    try:
-        result = await rcm.stripe_onboard(return_url, refresh_url)
-    except RCMError as e:
-        raise HTTPException(e.status_code or 502, str(e))
-
-    await log_audit_event(
-        user_id=user["uid"],
-        action="stripe_onboard_started",
-        resource_type="stripe",
-        ip_address=_client_ip(request),
-        user_agent=request.headers.get("user-agent"),
-    )
-
-    return result
-
-
 @router.get("/billing/stripe/status")
 async def stripe_status(
     request: Request,
     user: dict = Depends(require_practice_member("owner")),
 ):
-    """Check Stripe Connect account status for the practice."""
+    """Check whether the practice's Stripe is configured and working."""
     from rcm_client import get_rcm_client, RCMError
 
     pool = await get_pool()
     rcm = await get_rcm_client(pool)
     if not rcm:
-        raise HTTPException(400, "RCM service not configured")
+        return {"configured": False, "charges_enabled": False}
 
     try:
         result = await rcm.stripe_status()
-    except RCMError as e:
-        raise HTTPException(e.status_code or 502, str(e))
+    except RCMError:
+        return {"configured": False, "charges_enabled": False}
 
     return result
 
