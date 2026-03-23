@@ -190,6 +190,7 @@ GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8080/api/google/callback
 OAUTH_TOKEN_ENCRYPTION_KEY=<from Phase 5>
 FRONTEND_BASE_URL=http://localhost:5173
 CRON_SECRET=<generated above>
+TRELLIS_SERVICES_URL=https://trellis-services-608286927070.us-central1.run.app
 ```
 **DO NOT** add `DEV_MODE=1` — it bypasses JWT verification and must never be set in production.
 
@@ -316,7 +317,7 @@ gcloud run deploy trellis-api \
   --add-cloudsql-instances=${PROJECT_ID}:us-central1:trellis-db \
   --memory=512Mi --cpu=1 --timeout=3600 \
   --min-instances=0 --max-instances=10 \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},DATABASE_URL=postgresql://postgres:<DB_PASSWORD>@/trellis?host=/cloudsql/${PROJECT_ID}:us-central1:trellis-db,GOOGLE_OAUTH_CLIENT_ID=<id>,GOOGLE_OAUTH_CLIENT_SECRET=<secret>,GOOGLE_OAUTH_REDIRECT_URI=<API_URL>/api/google/callback,OAUTH_TOKEN_ENCRYPTION_KEY=<key>,FRONTEND_BASE_URL=<FRONTEND_URL>,ALLOWED_ORIGINS=<FRONTEND_URL>,CRON_SECRET=<secret>"
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},DATABASE_URL=postgresql://postgres:<DB_PASSWORD>@/trellis?host=/cloudsql/${PROJECT_ID}:us-central1:trellis-db,GOOGLE_OAUTH_CLIENT_ID=<id>,GOOGLE_OAUTH_CLIENT_SECRET=<secret>,GOOGLE_OAUTH_REDIRECT_URI=<API_URL>/api/google/callback,OAUTH_TOKEN_ENCRYPTION_KEY=<key>,FRONTEND_BASE_URL=<FRONTEND_URL>,ALLOWED_ORIGINS=<FRONTEND_URL>,CRON_SECRET=<secret>,TRELLIS_SERVICES_URL=https://trellis-services-608286927070.us-central1.run.app"
 
 # Relay
 gcloud run deploy trellis-relay \
