@@ -182,11 +182,11 @@ export function AuthModal({ mode, onClose, prefillEmail }: AuthModalProps) {
               />
               <span className="text-xs text-warm-500 leading-relaxed">
                 I accept the{" "}
-                <a href="https://trellis-490020.web.app/terms.html" target="_blank" rel="noopener noreferrer" className="text-teal-600 underline hover:text-teal-700">
+                <a href="https://trellis-177416.web.app/terms.html" target="_blank" rel="noopener noreferrer" className="text-teal-600 underline hover:text-teal-700">
                   Terms of Service
                 </a>{" "}
                 and{" "}
-                <a href="https://trellis-490020.web.app/privacy.html" target="_blank" rel="noopener noreferrer" className="text-teal-600 underline hover:text-teal-700">
+                <a href="https://trellis-177416.web.app/privacy.html" target="_blank" rel="noopener noreferrer" className="text-teal-600 underline hover:text-teal-700">
                   Privacy Policy
                 </a>
               </span>
