@@ -1,12 +1,12 @@
 /**
  * Re-authentication Modal
  *
- * Prompts the user to verify their identity before performing a sensitive
- * action on PHI. Supports both Google and email/password re-authentication
+ * Prompts the user to verify their identity before performing a high-impact
+ * destructive or administrative action. Supports Google and email/password re-authentication
  * based on the user's original sign-in method.
  *
- * HIPAA Technical Safeguard: Access Control — requires identity verification
- * for actions that modify, sign, or delete protected health information.
+ * Step-up verification is intentionally reserved for workflows beyond routine
+ * clinical signing, which remains covered by the active authenticated session.
  */
 import { useState } from "react";
 import { useReauthContext } from "./ReauthProvider";

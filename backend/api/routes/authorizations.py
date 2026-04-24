@@ -5,7 +5,8 @@ with superbill generation, and dashboard warnings for expiring/low-session
 authorizations.
 
 HIPAA Access Control:
-  - All endpoints require clinician role (require_role("clinician"))
+  - All endpoints require active practice owner access
+  - Authorization records are scoped to the owner's practice
   - All reads and writes logged to audit_events
 
 Endpoints:
@@ -16,13 +17,12 @@ Endpoints:
   - PUT  /api/authorizations/{auth_id}          — update auth
   - DELETE /api/authorizations/{auth_id}        — delete auth
 """
-import logging
 import sys
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from auth import require_role, require_practice_member
+from auth import require_practice_member
 
 sys.path.insert(0, "../shared")
 from db import (
@@ -36,8 +36,6 @@ from db import (
     get_low_session_authorizations,
     log_audit_event,
 )
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -81,6 +79,29 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+async def _client_belongs_to_practice(client_id: str, practice_id: str) -> bool:
+    """Return True when client_id is assigned to a clinician in practice_id."""
+    pool = await get_pool()
+    return bool(await pool.fetchval(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM clients c
+            JOIN clinicians cl ON cl.firebase_uid = c.primary_clinician_id
+            WHERE c.firebase_uid = $1
+              AND cl.practice_id = $2::uuid
+        )
+        """,
+        client_id,
+        practice_id,
+    ))
+
+
+async def _ensure_client_belongs_to_practice(client_id: str, practice_id: str) -> None:
+    if not await _client_belongs_to_practice(client_id, practice_id):
+        raise HTTPException(404, "Client not found")
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -91,7 +112,9 @@ async def create_auth(
     request: Request,
     user: dict = Depends(require_practice_member("owner")),
 ):
-    """Create a new authorization. Clinician only."""
+    """Create a new authorization for a client in the owner's practice."""
+    await _ensure_client_belongs_to_practice(body.client_id, user["practice_id"])
+
     auth = await create_authorization(
         client_id=body.client_id,
         clinician_id=user["uid"],
@@ -128,8 +151,14 @@ async def get_auth_warnings(
     user: dict = Depends(require_practice_member("owner")),
 ):
     """Get all authorization warnings: expiring soon + low sessions remaining."""
-    expiring = await get_expiring_authorizations(days=14)
-    low_sessions = await get_low_session_authorizations(remaining=3)
+    expiring = await get_expiring_authorizations(
+        days=14,
+        practice_id=user["practice_id"],
+    )
+    low_sessions = await get_low_session_authorizations(
+        remaining=3,
+        practice_id=user["practice_id"],
+    )
 
     await log_audit_event(
         user_id=user["uid"],
@@ -155,8 +184,12 @@ async def list_client_authorizations(
     request: Request,
     user: dict = Depends(require_practice_member("owner")),
 ):
-    """List all authorizations for a client. Clinician only."""
-    auths = await get_client_authorizations(client_id)
+    """List all authorizations for a client in the owner's practice."""
+    await _ensure_client_belongs_to_practice(client_id, user["practice_id"])
+    auths = await get_client_authorizations(
+        client_id,
+        practice_id=user["practice_id"],
+    )
 
     await log_audit_event(
         user_id=user["uid"],
@@ -177,8 +210,8 @@ async def get_auth(
     request: Request,
     user: dict = Depends(require_practice_member("owner")),
 ):
-    """Get a single authorization. Clinician only."""
-    auth = await get_authorization(auth_id)
+    """Get a single authorization in the owner's practice."""
+    auth = await get_authorization(auth_id, practice_id=user["practice_id"])
     if not auth:
         raise HTTPException(404, "Authorization not found")
 
@@ -201,8 +234,8 @@ async def update_auth(
     request: Request,
     user: dict = Depends(require_practice_member("owner")),
 ):
-    """Update an authorization. Clinician only. Only active/pending auths can be updated."""
-    existing = await get_authorization(auth_id)
+    """Update an authorization in the owner's practice. Only active/pending auths can be updated."""
+    existing = await get_authorization(auth_id, practice_id=user["practice_id"])
     if not existing:
         raise HTTPException(404, "Authorization not found")
 
@@ -238,12 +271,12 @@ async def delete_auth(
     request: Request,
     user: dict = Depends(require_practice_member("owner")),
 ):
-    """Delete an authorization. Clinician only."""
-    existing = await get_authorization(auth_id)
+    """Delete an authorization in the owner's practice."""
+    existing = await get_authorization(auth_id, practice_id=user["practice_id"])
     if not existing:
         raise HTTPException(404, "Authorization not found")
 
-    deleted = await delete_authorization(auth_id)
+    deleted = await delete_authorization(auth_id, practice_id=user["practice_id"])
     if not deleted:
         raise HTTPException(500, "Failed to delete authorization")
 

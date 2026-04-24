@@ -3011,28 +3011,64 @@ async def create_authorization(
     return _authorization_to_dict(row)
 
 
-async def get_authorization(auth_id: str) -> dict | None:
-    """Fetch a single authorization by ID."""
+async def get_authorization(auth_id: str, practice_id: str | None = None) -> dict | None:
+    """Fetch a single authorization by ID, optionally scoped to a practice."""
     pool = await get_pool()
-    r = await pool.fetchrow(
-        "SELECT * FROM authorizations WHERE id = $1::uuid", auth_id
-    )
+    if practice_id:
+        r = await pool.fetchrow(
+            """
+            SELECT a.*
+            FROM authorizations a
+            JOIN clients c ON c.firebase_uid = a.client_id
+            JOIN clinicians cl ON cl.firebase_uid = c.primary_clinician_id
+            WHERE a.id = $1::uuid
+              AND cl.practice_id = $2::uuid
+            """,
+            auth_id,
+            practice_id,
+        )
+    else:
+        r = await pool.fetchrow(
+            "SELECT * FROM authorizations WHERE id = $1::uuid", auth_id
+        )
     if not r:
         return None
     return _authorization_to_dict(r)
 
 
-async def get_client_authorizations(client_id: str) -> list[dict]:
-    """Fetch all authorizations for a client, newest first."""
+async def get_client_authorizations(
+    client_id: str,
+    practice_id: str | None = None,
+) -> list[dict]:
+    """Fetch all authorizations for a client, newest first.
+
+    When practice_id is provided, only returns authorizations for clients whose
+    assigned clinician belongs to that practice.
+    """
     pool = await get_pool()
-    rows = await pool.fetch(
-        """
-        SELECT * FROM authorizations
-        WHERE client_id = $1
-        ORDER BY created_at DESC
-        """,
-        client_id,
-    )
+    if practice_id:
+        rows = await pool.fetch(
+            """
+            SELECT a.*
+            FROM authorizations a
+            JOIN clients c ON c.firebase_uid = a.client_id
+            JOIN clinicians cl ON cl.firebase_uid = c.primary_clinician_id
+            WHERE a.client_id = $1
+              AND cl.practice_id = $2::uuid
+            ORDER BY a.created_at DESC
+            """,
+            client_id,
+            practice_id,
+        )
+    else:
+        rows = await pool.fetch(
+            """
+            SELECT * FROM authorizations
+            WHERE client_id = $1
+            ORDER BY created_at DESC
+            """,
+            client_id,
+        )
     return [_authorization_to_dict(r) for r in rows]
 
 
@@ -3149,29 +3185,65 @@ async def increment_auth_sessions_used(auth_id: str) -> dict | None:
     return _authorization_to_dict(row)
 
 
-async def delete_authorization(auth_id: str) -> bool:
+async def delete_authorization(auth_id: str, practice_id: str | None = None) -> bool:
     """Delete an authorization. Returns True if deleted."""
     pool = await get_pool()
-    result = await pool.execute(
-        "DELETE FROM authorizations WHERE id = $1::uuid", auth_id
-    )
+    if practice_id:
+        result = await pool.execute(
+            """
+            DELETE FROM authorizations a
+            WHERE a.id = $1::uuid
+              AND EXISTS (
+                  SELECT 1
+                  FROM clients c
+                  JOIN clinicians cl ON cl.firebase_uid = c.primary_clinician_id
+                  WHERE c.firebase_uid = a.client_id
+                    AND cl.practice_id = $2::uuid
+              )
+            """,
+            auth_id,
+            practice_id,
+        )
+    else:
+        result = await pool.execute(
+            "DELETE FROM authorizations WHERE id = $1::uuid", auth_id
+        )
     return result == "DELETE 1"
 
 
-async def get_expiring_authorizations(days: int = 14) -> list[dict]:
+async def get_expiring_authorizations(
+    days: int = 14,
+    practice_id: str | None = None,
+) -> list[dict]:
     """Get active authorizations expiring within N days."""
     pool = await get_pool()
-    rows = await pool.fetch(
-        """
-        SELECT a.*, c.full_name AS client_name, c.id AS client_uuid
-        FROM authorizations a
-        LEFT JOIN clients c ON c.firebase_uid = a.client_id
-        WHERE a.status = 'active'
-          AND a.end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + $1 * INTERVAL '1 day'
-        ORDER BY a.end_date ASC
-        """,
-        days,
-    )
+    if practice_id:
+        rows = await pool.fetch(
+            """
+            SELECT a.*, c.full_name AS client_name, c.id AS client_uuid
+            FROM authorizations a
+            JOIN clients c ON c.firebase_uid = a.client_id
+            JOIN clinicians cl ON cl.firebase_uid = c.primary_clinician_id
+            WHERE a.status = 'active'
+              AND a.end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + $1 * INTERVAL '1 day'
+              AND cl.practice_id = $2::uuid
+            ORDER BY a.end_date ASC
+            """,
+            days,
+            practice_id,
+        )
+    else:
+        rows = await pool.fetch(
+            """
+            SELECT a.*, c.full_name AS client_name, c.id AS client_uuid
+            FROM authorizations a
+            LEFT JOIN clients c ON c.firebase_uid = a.client_id
+            WHERE a.status = 'active'
+              AND a.end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + $1 * INTERVAL '1 day'
+            ORDER BY a.end_date ASC
+            """,
+            days,
+        )
     results = []
     for r in rows:
         d = _authorization_to_dict(r)
@@ -3181,23 +3253,45 @@ async def get_expiring_authorizations(days: int = 14) -> list[dict]:
     return results
 
 
-async def get_low_session_authorizations(remaining: int = 3) -> list[dict]:
+async def get_low_session_authorizations(
+    remaining: int = 3,
+    practice_id: str | None = None,
+) -> list[dict]:
     """Get active authorizations with N or fewer sessions remaining."""
     pool = await get_pool()
-    rows = await pool.fetch(
-        """
-        SELECT a.*, c.full_name AS client_name, c.id AS client_uuid
-        FROM authorizations a
-        LEFT JOIN clients c ON c.firebase_uid = a.client_id
-        WHERE a.status = 'active'
-          AND a.authorized_sessions IS NOT NULL
-          AND (a.authorized_sessions - a.sessions_used) <= $1
-          AND (a.authorized_sessions - a.sessions_used) > 0
-          AND a.end_date >= CURRENT_DATE
-        ORDER BY (a.authorized_sessions - a.sessions_used) ASC
-        """,
-        remaining,
-    )
+    if practice_id:
+        rows = await pool.fetch(
+            """
+            SELECT a.*, c.full_name AS client_name, c.id AS client_uuid
+            FROM authorizations a
+            JOIN clients c ON c.firebase_uid = a.client_id
+            JOIN clinicians cl ON cl.firebase_uid = c.primary_clinician_id
+            WHERE a.status = 'active'
+              AND a.authorized_sessions IS NOT NULL
+              AND (a.authorized_sessions - a.sessions_used) <= $1
+              AND (a.authorized_sessions - a.sessions_used) > 0
+              AND a.end_date >= CURRENT_DATE
+              AND cl.practice_id = $2::uuid
+            ORDER BY (a.authorized_sessions - a.sessions_used) ASC
+            """,
+            remaining,
+            practice_id,
+        )
+    else:
+        rows = await pool.fetch(
+            """
+            SELECT a.*, c.full_name AS client_name, c.id AS client_uuid
+            FROM authorizations a
+            LEFT JOIN clients c ON c.firebase_uid = a.client_id
+            WHERE a.status = 'active'
+              AND a.authorized_sessions IS NOT NULL
+              AND (a.authorized_sessions - a.sessions_used) <= $1
+              AND (a.authorized_sessions - a.sessions_used) > 0
+              AND a.end_date >= CURRENT_DATE
+            ORDER BY (a.authorized_sessions - a.sessions_used) ASC
+            """,
+            remaining,
+        )
     results = []
     for r in rows:
         d = _authorization_to_dict(r)

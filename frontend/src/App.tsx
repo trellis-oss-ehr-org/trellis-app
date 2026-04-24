@@ -206,7 +206,7 @@ export default function App() {
       <AuthProvider>
         <ReauthProvider>
           <AppRoutes />
-          {/* HIPAA: Re-auth modal for sensitive actions (signing, discharge, etc.) */}
+          {/* Re-auth modal for destructive/admin actions that need step-up verification. */}
           <ReauthModal />
         </ReauthProvider>
       </AuthProvider>
