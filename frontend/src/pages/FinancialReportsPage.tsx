@@ -47,9 +47,9 @@ interface PayerMix {
   count: number;
 }
 
-interface DenialRate {
+interface UnresolvedClaimRate {
   total_claims: number;
-  denied_claims: number;
+  stale_claims: number;
   rate_percent: number;
 }
 
@@ -72,7 +72,7 @@ interface ReportsData {
   collections_by_cpt: CptCollection[];
   ar_aging: ArAging;
   payer_mix: PayerMix[];
-  denial_rate: DenialRate;
+  unresolved_claim_rate: UnresolvedClaimRate;
   avg_days_to_payment_by_payer: AvgDaysByPayer[];
   ytd_summary: YtdSummary;
   date_range: { from_date: string; to_date: string };
@@ -528,7 +528,7 @@ function AvgDaysTable({ data }: { data: AvgDaysByPayer[] }) {
   );
 }
 
-function DenialRateCard({ data }: { data: DenialRate }) {
+function UnresolvedClaimRateCard({ data }: { data: UnresolvedClaimRate }) {
   const rateColor =
     data.rate_percent <= 5
       ? "text-green-600"
@@ -542,14 +542,14 @@ function DenialRateCard({ data }: { data: DenialRate }) {
         <p className={`text-4xl font-bold ${rateColor}`}>
           {data.rate_percent.toFixed(1)}%
         </p>
-        <p className="text-xs text-warm-400 mt-1">Denial Rate</p>
+        <p className="text-xs text-warm-400 mt-1">Stale Claim Rate</p>
       </div>
       <div className="border-l border-warm-100 pl-6 space-y-1">
         <p className="text-sm text-warm-600">
           <span className="font-medium text-warm-800">{data.total_claims}</span> total claims
         </p>
         <p className="text-sm text-warm-600">
-          <span className="font-medium text-red-600">{data.denied_claims}</span> denied / stale
+          <span className="font-medium text-red-600">{data.stale_claims}</span> stale
         </p>
         <p className="text-xs text-warm-400 mt-2">
           Based on claims outstanding 45+ days after submission
@@ -729,16 +729,16 @@ export default function FinancialReportsPage() {
             <CptTable data={data.collections_by_cpt} />
           </Section>
 
-          {/* Two-column: Avg Days + Denial Rate */}
+          {/* Two-column: Avg Days + Stale Claim Rate */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Avg Days to Payment */}
             <Section title="Avg Days to Payment by Payer">
               <AvgDaysTable data={data.avg_days_to_payment_by_payer} />
             </Section>
 
-            {/* Denial Rate */}
-            <Section title="Denial Rate">
-              <DenialRateCard data={data.denial_rate} />
+            {/* Stale Claim Rate */}
+            <Section title="Stale Claim Rate">
+              <UnresolvedClaimRateCard data={data.unresolved_claim_rate} />
             </Section>
           </div>
         </div>

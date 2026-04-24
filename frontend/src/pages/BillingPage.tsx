@@ -168,25 +168,7 @@ export default function BillingPage() {
   const [statementToDate, setStatementToDate] = useState("");
   const [generatingStatement, setGeneratingStatement] = useState(false);
   const [emailingStatement, setEmailingStatement] = useState(false);
-  const [submittingClaimId, setSubmittingClaimId] = useState<string | null>(null);
-  const [billingConnected, setBillingConnected] = useState(false);
-  const [activeTab, setActiveTab] = useState<"superbills" | "outstanding" | "denials">("superbills");
-  const [denialCount, setDenialCount] = useState<number>(0);
-
-  // Payment link modal state
-  const [paymentLinkModal, setPaymentLinkModal] = useState<{
-    superbillId: string;
-    clientName: string;
-    clientEmail: string | null;
-    amount: number;
-  } | null>(null);
-  const [paymentLinkResult, setPaymentLinkResult] = useState<{
-    url: string;
-    amount: number;
-    expires_at: string | null;
-  } | null>(null);
-  const [creatingPaymentLink, setCreatingPaymentLink] = useState(false);
-  const [copiedPaymentLink, setCopiedPaymentLink] = useState(false);
+  const [activeTab, setActiveTab] = useState<"superbills" | "outstanding">("superbills");
 
   const loadSuperbills = useCallback(async () => {
     try {
@@ -195,20 +177,12 @@ export default function BillingPage() {
       if (fromDate) params.set("from_date", fromDate);
       if (toDate) params.set("to_date", toDate);
       const qs = params.toString() ? `?${params.toString()}` : "";
-      const [data, warnings, summaryData, deadlinesData, billingSettings] = await Promise.all([
+      const [data, warnings, summaryData, deadlinesData] = await Promise.all([
         api.get<SuperbillsResponse>(`/api/superbills${qs}`),
         api.get<AuthWarningsResponse>("/api/authorizations/warnings").catch(() => null),
         api.get<EnhancedSummary>("/api/superbills/summary").catch(() => null),
         api.get<FilingDeadlinesResponse>("/api/superbills/filing-deadlines").catch(() => null),
-        api.get<{ connected: boolean }>("/api/billing/settings").catch(() => null),
       ]);
-      if (billingSettings) setBillingConnected(billingSettings.connected);
-      // Fetch denial count if billing is connected
-      if (billingSettings?.connected) {
-        api.get<any>("/api/billing/denials?limit=1")
-          .then((resp) => setDenialCount(resp.total ?? resp.count ?? 0))
-          .catch(() => setDenialCount(0));
-      }
       setSuperbills(
         data.superbills.map((sb) => ({
           ...sb,
@@ -399,81 +373,6 @@ export default function BillingPage() {
     }
   }
 
-  async function handleSubmitClaim(superbillId: string) {
-    setSubmittingClaimId(superbillId);
-    try {
-      const result = await api.post<{ status: string; billing_claim_id?: string; warnings?: string[] }>(
-        `/api/superbills/${superbillId}/submit`,
-        {}
-      );
-      // Update local state
-      setSuperbills((prev) =>
-        prev.map((sb) =>
-          sb.id === superbillId ? { ...sb, status: "submitted" as const, date_submitted: new Date().toISOString() } : sb
-        )
-      );
-      if (result.warnings && result.warnings.length > 0) {
-        alert(`Claim submitted with warnings:\n${result.warnings.join("\n")}`);
-      }
-    } catch (err: any) {
-      console.error("Failed to submit claim:", err);
-      alert(err.message || "Failed to submit claim to billing service.");
-    } finally {
-      setSubmittingClaimId(null);
-    }
-  }
-
-  async function handleCreatePaymentLink(superbillId: string, patientEmail: string | null) {
-    setCreatingPaymentLink(true);
-    try {
-      const result = await api.post<{
-        payment_link_url: string;
-        amount: number;
-        expires_at: string | null;
-        superbill_id: string;
-      }>(`/api/superbills/${superbillId}/payment-link`, {
-        patient_email: patientEmail,
-      });
-      setPaymentLinkResult({
-        url: result.payment_link_url,
-        amount: result.amount,
-        expires_at: result.expires_at,
-      });
-    } catch (err: any) {
-      console.error("Failed to create payment link:", err);
-      alert(err.message || "Failed to create payment link.");
-    } finally {
-      setCreatingPaymentLink(false);
-    }
-  }
-
-  async function handleCopyPaymentLink(url: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopiedPaymentLink(true);
-      setTimeout(() => setCopiedPaymentLink(false), 2000);
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = url;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      setCopiedPaymentLink(true);
-      setTimeout(() => setCopiedPaymentLink(false), 2000);
-    }
-  }
-
-  /**
-   * Compute patient responsibility for a superbill.
-   * If fee > amount_paid, there is a patient balance.
-   */
-  function getPatientBalance(sb: Superbill): number {
-    const fee = sb.fee ?? 0;
-    const paid = sb.amount_paid ?? 0;
-    return Math.max(0, fee - paid);
-  }
-
   // Get unique clients from superbills for the statement modal dropdown
   const uniqueClients = Array.from(
     new Map(
@@ -600,24 +499,11 @@ export default function BillingPage() {
         >
           Outstanding Balances
         </button>
-        {billingConnected && !cashOnly && (
-          <Link
-            to="/billing/denials"
-            className="px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-warm-500 hover:text-warm-700 transition-colors flex items-center gap-1.5"
-          >
-            Denials
-            {denialCount > 0 && (
-              <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 min-w-[20px]">
-                {denialCount}
-              </span>
-            )}
-          </Link>
-        )}
       </div>
 
       {/* Outstanding Balances Tab */}
       {activeTab === "outstanding" && (
-        <OutstandingBalances billingConnected={billingConnected} />
+        <OutstandingBalances />
       )}
 
       {/* Superbills Tab Content */}
@@ -1142,24 +1028,6 @@ export default function BillingPage() {
                             </button>
                           )}
 
-                          {/* Submit Claim (billing service) — insurance only */}
-                          {!cashOnly && billingConnected && sb.status === "generated" && (
-                            <button
-                              onClick={() => handleSubmitClaim(sb.id)}
-                              disabled={submittingClaimId === sb.id}
-                              className="p-1.5 text-warm-400 hover:text-green-600 transition-colors disabled:opacity-50"
-                              title="Submit claim to billing service"
-                            >
-                              {submittingClaimId === sb.id ? (
-                                <span className="w-4 h-4 block border-2 border-green-200 border-t-green-600 rounded-full animate-spin" />
-                              ) : (
-                                <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                </svg>
-                              )}
-                            </button>
-                          )}
-
                           {/* Email */}
                           {sb.has_pdf && (
                             <button
@@ -1176,26 +1044,6 @@ export default function BillingPage() {
                                   <path d="M19 8.839l-7.77 3.885a2.75 2.75 0 01-2.46 0L1 8.839V14a2 2 0 002 2h14a2 2 0 002-2V8.839z" />
                                 </svg>
                               )}
-                            </button>
-                          )}
-
-                          {/* Payment Link */}
-                          {billingConnected && getPatientBalance(sb) > 0 && (
-                            <button
-                              onClick={() =>
-                                setPaymentLinkModal({
-                                  superbillId: sb.id,
-                                  clientName: sb.client_name || "Patient",
-                                  clientEmail: null,
-                                  amount: getPatientBalance(sb),
-                                })
-                              }
-                              className="p-1.5 text-warm-400 hover:text-orange-600 transition-colors"
-                              title="Send payment link"
-                            >
-                              <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                <path d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 001.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" />
-                              </svg>
                             </button>
                           )}
 
@@ -1243,122 +1091,6 @@ export default function BillingPage() {
       </div>
 
       </>}
-
-      {/* Payment Link Modal */}
-      {paymentLinkModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => {
-              setPaymentLinkModal(null);
-              setPaymentLinkResult(null);
-            }}
-          />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6 mx-4">
-            <h3 className="font-display text-lg font-bold text-warm-800 mb-1">
-              Send Payment Link
-            </h3>
-            <p className="text-sm text-warm-500 mb-4">
-              Generate a Stripe payment link for {paymentLinkModal.clientName || "this patient"}.
-            </p>
-
-            {!paymentLinkResult ? (
-              <div className="space-y-4">
-                <div className="bg-warm-50 rounded-xl p-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-warm-600">Patient Responsibility</span>
-                    <span className="text-lg font-bold text-red-600">
-                      {formatCurrency(paymentLinkModal.amount)}
-                    </span>
-                  </div>
-                </div>
-
-                {paymentLinkModal.clientEmail && (
-                  <div>
-                    <label className="block text-sm font-medium text-warm-700 mb-1">
-                      Patient Email
-                    </label>
-                    <p className="text-sm text-warm-600 bg-warm-50 rounded-lg px-3 py-2">
-                      {paymentLinkModal.clientEmail}
-                    </p>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-end gap-3 pt-2">
-                  <button
-                    onClick={() => {
-                      setPaymentLinkModal(null);
-                      setPaymentLinkResult(null);
-                    }}
-                    className="px-4 py-2 text-sm font-medium text-warm-600 hover:text-warm-800 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() =>
-                      handleCreatePaymentLink(
-                        paymentLinkModal.superbillId,
-                        paymentLinkModal.clientEmail
-                      )
-                    }
-                    disabled={creatingPaymentLink}
-                    className="px-4 py-2 text-sm font-medium rounded-xl bg-teal-600 text-white hover:bg-teal-700 transition-colors disabled:opacity-50 flex items-center gap-2"
-                  >
-                    {creatingPaymentLink ? (
-                      <span className="w-3.5 h-3.5 block border-2 border-teal-200 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                        <path d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 001.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" />
-                      </svg>
-                    )}
-                    Generate Payment Link
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
-                  <p className="text-sm text-teal-800 font-medium mb-2">
-                    Payment link generated!
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={paymentLinkResult.url}
-                      className="flex-1 px-3 py-2 text-xs bg-white border border-teal-200 rounded-lg text-warm-600 truncate"
-                    />
-                    <button
-                      onClick={() => handleCopyPaymentLink(paymentLinkResult.url)}
-                      className="px-3 py-2 text-xs font-medium rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition-colors whitespace-nowrap"
-                    >
-                      {copiedPaymentLink ? "Copied!" : "Copy"}
-                    </button>
-                  </div>
-                  <p className="text-xs text-teal-600 mt-2">
-                    Amount: {formatCurrency(paymentLinkResult.amount)}
-                    {paymentLinkResult.expires_at && (
-                      <> &middot; Expires: {formatDate(paymentLinkResult.expires_at)}</>
-                    )}
-                  </p>
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    onClick={() => {
-                      setPaymentLinkModal(null);
-                      setPaymentLinkResult(null);
-                    }}
-                    className="px-4 py-2 text-sm font-medium text-warm-600 hover:text-warm-800 transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Statement Generation Modal */}
       {showStatementModal && (

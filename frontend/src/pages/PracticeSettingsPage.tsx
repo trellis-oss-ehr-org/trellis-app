@@ -4,7 +4,6 @@ import { useApi } from "../hooks/useApi";
 import { useAuth } from "../hooks/useAuth";
 import { useGoogleOAuth } from "../hooks/useGoogleOAuth";
 import { Button } from "../components/Button";
-import StripeOnboardingCard from "../components/billing/StripeOnboardingCard";
 import type { PracticeProfile } from "../types";
 
 const US_STATES = [
@@ -54,6 +53,20 @@ interface FormData {
   default_session_duration: string;
   intake_duration: string;
   timezone: string;
+}
+
+interface TextingStatus {
+  configured: boolean;
+  install_id: string;
+  account_id: string | null;
+  status: string;
+  baa_status: string;
+  subscription_status: string;
+  telnyx_status: string;
+  credential_key_prefix: string | null;
+  last_error: string | null;
+  last_synced_at: string | null;
+  texting_enabled: boolean;
 }
 
 function profileToForm(p: PracticeProfile): FormData {
@@ -119,12 +132,6 @@ function Input({
   );
 }
 
-interface LicenseStatus {
-  has_key: boolean;
-  key_preview?: string;
-  features: Record<string, boolean>;
-}
-
 export default function PracticeSettingsPage() {
   const api = useApi();
   const { isOwner, practiceType } = useAuth();
@@ -136,13 +143,10 @@ export default function PracticeSettingsPage() {
   const google = useGoogleOAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [googleToast, setGoogleToast] = useState("");
-
-  // License key state
-  const [licenseKey, setLicenseKey] = useState("");
-  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
-  const [licenseLoading, setLicenseLoading] = useState(false);
-  const [licenseError, setLicenseError] = useState("");
-  const [licenseSuccess, setLicenseSuccess] = useState("");
+  const [textingStatus, setTextingStatus] = useState<TextingStatus | null>(null);
+  const [textingLoading, setTextingLoading] = useState(true);
+  const [textingAction, setTextingAction] = useState(false);
+  const [textingNotice, setTextingNotice] = useState("");
 
   useEffect(() => {
     if (searchParams.get("google") === "connected") {
@@ -156,6 +160,58 @@ export default function PracticeSettingsPage() {
       return () => clearTimeout(timer);
     }
   }, []);
+
+  async function loadTextingStatus() {
+    setTextingLoading(true);
+    try {
+      const data = await api.get<TextingStatus>("/api/texting/status");
+      setTextingStatus(data);
+    } catch (e: any) {
+      setTextingStatus(null);
+      setTextingNotice(e.message || "Unable to load texting status");
+    } finally {
+      setTextingLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadTextingStatus();
+  }, [api]);
+
+  useEffect(() => {
+    if (searchParams.get("texting") !== "connect") return;
+    const sessionId = searchParams.get("session_id");
+    const exchangeCode = searchParams.get("exchange_code");
+    if (!sessionId || !exchangeCode) return;
+
+    async function completeTextingConnection() {
+      setTextingAction(true);
+      setTextingNotice("");
+      try {
+        const data = await api.post<TextingStatus>("/api/texting/onboarding/complete", {
+          session_id: sessionId,
+          exchange_code: exchangeCode,
+        });
+        setTextingStatus(data);
+        setTextingNotice(
+          data.texting_enabled
+            ? "Text reminders are connected."
+            : "Stripe activation is still pending. Refresh this status in a moment."
+        );
+      } catch (e: any) {
+        setTextingNotice(e.message || "Unable to finish texting setup");
+      } finally {
+        const next = new URLSearchParams(searchParams);
+        next.delete("texting");
+        next.delete("session_id");
+        next.delete("exchange_code");
+        setSearchParams(next, { replace: true });
+        setTextingAction(false);
+      }
+    }
+
+    completeTextingConnection();
+  }, [api, searchParams, setSearchParams]);
 
   useEffect(() => {
     async function load() {
@@ -186,56 +242,6 @@ export default function PracticeSettingsPage() {
   }, [api]);
 
   // Load license status
-  useEffect(() => {
-    if (!isOwner) return;
-    async function loadLicense() {
-      try {
-        const data = await api.get<LicenseStatus>("/api/practice/license-key");
-        setLicenseStatus(data);
-      } catch {
-        // No license configured — that's fine
-      }
-    }
-    loadLicense();
-  }, [api, isOwner]);
-
-  async function handleActivateKey() {
-    if (!licenseKey.trim()) return;
-    setLicenseLoading(true);
-    setLicenseError("");
-    setLicenseSuccess("");
-    try {
-      const data = await api.put<{ features: Record<string, boolean> }>(
-        "/api/practice/license-key",
-        { key: licenseKey.trim() },
-      );
-      setLicenseStatus({ has_key: true, key_preview: licenseKey.trim().slice(0, 16) + "...", features: data.features });
-      setLicenseKey("");
-      setLicenseSuccess("License key activated successfully");
-      setTimeout(() => setLicenseSuccess(""), 5000);
-    } catch (e: any) {
-      setLicenseError(e.message || "Failed to activate key");
-    } finally {
-      setLicenseLoading(false);
-    }
-  }
-
-  async function handleRemoveKey() {
-    setLicenseLoading(true);
-    setLicenseError("");
-    setLicenseSuccess("");
-    try {
-      await api.del("/api/practice/license-key");
-      setLicenseStatus({ has_key: false, features: {} });
-      setLicenseSuccess("License key removed");
-      setTimeout(() => setLicenseSuccess(""), 5000);
-    } catch (e: any) {
-      setLicenseError(e.message || "Failed to remove key");
-    } finally {
-      setLicenseLoading(false);
-    }
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -327,6 +333,27 @@ export default function PracticeSettingsPage() {
     }
   }
 
+  async function handleTextingPrimary() {
+    if (!textingStatus?.configured) return;
+    setTextingAction(true);
+    setTextingNotice("");
+    try {
+      if (textingStatus.texting_enabled) {
+        const data = await api.post<{ url: string }>("/api/texting/billing-portal", {});
+        window.location.href = data.url;
+        return;
+      }
+      const data = await api.post<{ onboarding_url: string }>("/api/texting/onboarding/start", {});
+      window.location.href = data.onboarding_url;
+    } catch (e: any) {
+      setTextingNotice(e.message || "Unable to start texting setup");
+    } finally {
+      setTextingAction(false);
+    }
+  }
+
+  const canManagePractice = practiceType === "solo" || isOwner;
+
   return (
     <div className="px-8 py-8 max-w-3xl">
       <div className="mb-8">
@@ -346,12 +373,6 @@ export default function PracticeSettingsPage() {
               Team
             </Link>
           )}
-          <Link
-            to="/settings/credentialing"
-            className="text-sm font-medium text-warm-400 hover:text-warm-600 pb-2 px-1 transition-colors"
-          >
-            Credentialing
-          </Link>
           <Link
             to="/settings/audit-log"
             className="text-sm font-medium text-warm-400 hover:text-warm-600 pb-2 px-1 transition-colors"
@@ -430,6 +451,17 @@ export default function PracticeSettingsPage() {
           )}
         </div>
       </div>
+
+      {canManagePractice && (
+        <TextingConnectionCard
+          status={textingStatus}
+          loading={textingLoading}
+          working={textingAction}
+          notice={textingNotice}
+          onPrimary={handleTextingPrimary}
+          onRefresh={loadTextingStatus}
+        />
+      )}
 
       <div className="bg-white rounded-2xl border border-warm-100 shadow-sm divide-y divide-warm-100">
         {/* Practice Info */}
@@ -570,7 +602,7 @@ export default function PracticeSettingsPage() {
             />
             <div>
               <span className="text-sm font-medium text-warm-800">Cash-only practice</span>
-              <p className="text-xs text-warm-500 mt-0.5">Hides insurance billing, credentialing, and claims throughout the app</p>
+              <p className="text-xs text-warm-500 mt-0.5">Hides insurance billing fields throughout the app</p>
             </div>
           </label>
           <label className="flex items-center gap-3 cursor-pointer p-3 bg-warm-50 rounded-lg border border-warm-200">
@@ -658,83 +690,6 @@ export default function PracticeSettingsPage() {
         </Section>}
       </div>
 
-      {/* Stripe Payment Processing (owner/solo, not cash-only) */}
-      {(practiceType === "solo" || isOwner) && !form.cash_only && (
-        <div className="mt-6">
-          <StripeOnboardingCard />
-        </div>
-      )}
-
-      {/* Services & License Key (owner only) */}
-      {isOwner && (
-        <div className="bg-white rounded-2xl border border-warm-100 shadow-sm mt-6">
-          <div className="px-6 py-6">
-            <h2 className="font-semibold text-warm-800 mb-1">Services</h2>
-            <p className="text-warm-400 text-xs mb-4">
-              Activate premium features like automated SMS reminders and revenue cycle management with a license key.
-            </p>
-
-            {licenseStatus?.has_key ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-teal-50 rounded-xl border border-teal-200">
-                  <div>
-                    <p className="text-sm font-medium text-teal-800">License key active</p>
-                    <p className="text-xs text-teal-600 mt-0.5 font-mono">{licenseStatus.key_preview}</p>
-                    <div className="flex gap-2 mt-2">
-                      {Object.entries(licenseStatus.features)
-                        .filter(([, v]) => v)
-                        .map(([feature]) => (
-                          <span
-                            key={feature}
-                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800"
-                          >
-                            {feature === "sms" ? "SMS Reminders" : feature === "rcm" ? "Revenue Cycle" : feature}
-                          </span>
-                        ))}
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleRemoveKey}
-                    disabled={licenseLoading}
-                    className="text-xs text-red-500 hover:text-red-700 font-medium transition-colors"
-                  >
-                    {licenseLoading ? "Removing..." : "Remove"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  <input
-                    value={licenseKey}
-                    onChange={(e) => { setLicenseKey(e.target.value); setLicenseError(""); }}
-                    placeholder="Paste your license key here"
-                    className="flex-1 px-4 py-2.5 rounded-xl border border-warm-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition-all text-warm-800 font-mono text-sm"
-                  />
-                  <button
-                    onClick={handleActivateKey}
-                    disabled={licenseLoading || !licenseKey.trim()}
-                    className="px-4 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {licenseLoading ? "Validating..." : "Activate"}
-                  </button>
-                </div>
-                <p className="text-xs text-warm-400">
-                  Don't have a key? Visit our website to subscribe to SMS reminders or revenue cycle management.
-                </p>
-              </div>
-            )}
-
-            {licenseError && (
-              <p className="mt-3 text-sm text-red-600">{licenseError}</p>
-            )}
-            {licenseSuccess && (
-              <p className="mt-3 text-sm text-teal-600 font-medium">{licenseSuccess}</p>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Save bar */}
       <div className="mt-6 flex items-center gap-4">
         <Button onClick={handleSave} disabled={saving || !form.clinician_name.trim()}>
@@ -756,6 +711,116 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <div className="px-6 py-6">
       <h2 className="font-semibold text-warm-800 mb-5">{title}</h2>
       <div className="space-y-4">{children}</div>
+    </div>
+  );
+}
+
+function TextingConnectionCard({
+  status,
+  loading,
+  working,
+  notice,
+  onPrimary,
+  onRefresh,
+}: {
+  status: TextingStatus | null;
+  loading: boolean;
+  working: boolean;
+  notice: string;
+  onPrimary: () => void;
+  onRefresh: () => void;
+}) {
+  const configured = status?.configured ?? false;
+  const enabled = status?.texting_enabled ?? false;
+  const pending = status?.status === "pending_activation" || status?.subscription_status === "checkout_completed";
+  const label = !configured
+    ? "Not configured"
+    : enabled
+      ? "Active"
+      : pending
+        ? "Activation pending"
+        : "Not active";
+  const dotClass = !configured
+    ? "bg-warm-300"
+    : enabled
+      ? "bg-teal-500"
+      : pending
+        ? "bg-amber-500"
+        : "bg-warm-300";
+  const buttonLabel = enabled
+    ? "Manage"
+    : pending
+      ? "Refresh"
+      : "Turn on";
+
+  return (
+    <div className="bg-white rounded-2xl border border-warm-100 shadow-sm mb-6">
+      <div className="px-6 py-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-semibold text-warm-800 mb-1">Text reminders</h2>
+            <p className="text-warm-400 text-xs max-w-xl">
+              Optional Trellis-hosted SMS reminders using a signed BAA, Stripe subscription, and Telnyx delivery.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-warm-600 whitespace-nowrap">
+            <span className={`w-2.5 h-2.5 rounded-full ${dotClass}`} />
+            {loading ? "Checking..." : label}
+          </div>
+        </div>
+
+        {status && (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <StatusPill label="BAA" value={status.baa_status === "signed" ? "Signed" : "Not signed"} />
+            <StatusPill label="Stripe" value={status.subscription_status.replace(/_/g, " ")} />
+            <StatusPill label="Telnyx" value={status.telnyx_status.replace(/_/g, " ")} />
+          </div>
+        )}
+
+        {notice && (
+          <p className="mt-3 text-xs text-warm-500">{notice}</p>
+        )}
+        {status?.last_error && (
+          <p className="mt-2 text-xs text-amber-700">{status.last_error}</p>
+        )}
+
+        <div className="mt-4 flex items-center gap-3">
+          {pending ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onRefresh}
+              disabled={working || loading}
+            >
+              {working ? "Checking..." : buttonLabel}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              onClick={onPrimary}
+              disabled={!configured || working || loading}
+            >
+              {working ? "Working..." : buttonLabel}
+            </Button>
+          )}
+          {status?.last_synced_at && (
+            <span className="text-xs text-warm-400">
+              Last checked {new Date(status.last_synced_at).toLocaleString()}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-warm-100 bg-warm-50 px-3 py-2">
+      <p className="text-[11px] uppercase tracking-wide text-warm-400">{label}</p>
+      <p className="mt-0.5 capitalize text-warm-700">{value}</p>
     </div>
   );
 }

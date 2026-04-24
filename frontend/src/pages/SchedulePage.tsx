@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useApi } from "../hooks/useApi";
 import { useScheduleApi } from "../hooks/useScheduleApi";
@@ -42,10 +41,6 @@ export default function SchedulePage() {
   const [selectedClinicianId, setSelectedClinicianId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [weekRange, setWeekRange] = useState(getWeekRange);
-  const [smsBannerDismissed, setSmsBannerDismissed] = useState(
-    () => localStorage.getItem("trellis_sms_banner_dismissed") === "true",
-  );
-  const [messagingEnabled, setMessagingEnabled] = useState<boolean | null>(null);
 
   const loadSchedule = useCallback(
     async (start?: string, end?: string) => {
@@ -86,13 +81,6 @@ export default function SchedulePage() {
         }
       }
       await Promise.all([loadSchedule(), loadAvailability()]);
-      // Check if SMS messaging is enabled
-      try {
-        const settings = await genApi.get<{ permissions?: { messaging?: boolean } }>("/api/billing/settings");
-        setMessagingEnabled(settings?.permissions?.messaging === true);
-      } catch {
-        setMessagingEnabled(false);
-      }
       setLoading(false);
     }
     init();
@@ -148,40 +136,6 @@ export default function SchedulePage() {
           </button>
         ))}
       </div>
-
-      {/* SMS Reminders CTA */}
-      {tab === "schedule" && !smsBannerDismissed && messagingEnabled === false && (
-        <div className="mb-6 bg-teal-50 border border-teal-200 rounded-2xl p-4 flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <p className="text-sm font-medium text-teal-900">
-              Reduce no-shows with SMS reminders
-            </p>
-            <p className="text-sm text-teal-700 mt-1">
-              Automated appointment reminders via Telnyx. Set up in settings.
-            </p>
-            <div className="flex gap-3 mt-3">
-              <Link
-                to="/settings/practice"
-                className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors"
-              >
-                Configure SMS
-              </Link>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              setSmsBannerDismissed(true);
-              localStorage.setItem("trellis_sms_banner_dismissed", "true");
-            }}
-            className="text-teal-400 hover:text-teal-600 transition-colors p-1"
-            aria-label="Dismiss"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      )}
 
       {/* Schedule tab */}
       {tab === "schedule" && (

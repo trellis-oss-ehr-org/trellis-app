@@ -23,5 +23,7 @@ DATABASE_URL = os.getenv(
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 
-# External services
-TRELLIS_SERVICES_URL = os.getenv("TRELLIS_SERVICES_URL", "")
+# Hosted Trellis texting service. This central service owns BAA, Stripe, Telnyx,
+# and install credentials for the text messaging add-on.
+TEXTING_SERVICE_URL = os.getenv("TEXTING_SERVICE_URL", "").rstrip("/")
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173").rstrip("/")

@@ -1,8 +1,5 @@
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
 import { useApi } from "../../hooks/useApi";
-import { useAuth } from "../../hooks/useAuth";
-import ClientPaymentButton from "../../components/billing/ClientPaymentButton";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -82,29 +79,12 @@ const CPT_LABELS: Record<string, string> = {
 
 export default function ClientBillingPage() {
   const api = useApi();
-  const { user } = useAuth();
-  const [searchParams] = useSearchParams();
 
   const [superbills, setSuperbills] = useState<Superbill[]>([]);
   const [balance, setBalance] = useState<ClientBalance | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [stripeEnabled, setStripeEnabled] = useState(false);
-  const [paymentToast, setPaymentToast] = useState("");
-
-  useEffect(() => {
-    const paymentStatus = searchParams.get("payment");
-    if (paymentStatus === "success") {
-      setPaymentToast("Payment submitted successfully! It may take a moment to reflect in your balance.");
-      const timer = setTimeout(() => setPaymentToast(""), 8000);
-      return () => clearTimeout(timer);
-    } else if (paymentStatus === "cancelled") {
-      setPaymentToast("Payment was cancelled.");
-      const timer = setTimeout(() => setPaymentToast(""), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [searchParams]);
 
   useEffect(() => {
     async function load() {
@@ -120,14 +100,6 @@ export default function ClientBillingPage() {
           }))
         );
         setBalance(data.client_balance || null);
-
-        // Check if practice has Stripe enabled (for Pay Now button)
-        try {
-          const stripeStatus = await api.get<{ configured: boolean; charges_enabled: boolean }>("/api/billing/stripe/status");
-          setStripeEnabled(stripeStatus.configured === true && stripeStatus.charges_enabled === true);
-        } catch {
-          // Stripe not set up
-        }
       } catch (err: any) {
         console.error("Failed to load superbills:", err);
         setError(err.message);
@@ -172,16 +144,6 @@ export default function ClientBillingPage() {
         View and download your superbills for insurance reimbursement.
       </p>
 
-      {paymentToast && (
-        <div className={`mb-4 px-4 py-3 rounded-xl text-sm ${
-          paymentToast.includes("success")
-            ? "bg-teal-50 border border-teal-200 text-teal-800"
-            : "bg-warm-50 border border-warm-200 text-warm-700"
-        }`}>
-          {paymentToast}
-        </div>
-      )}
-
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-4">
           {error}
@@ -213,27 +175,6 @@ export default function ClientBillingPage() {
             </p>
             <p className="text-xs text-warm-500 mt-0.5">Outstanding</p>
           </div>
-        </div>
-      )}
-
-      {/* Pay Now button when outstanding balance exists */}
-      {stripeEnabled && balance && balance.outstanding > 0 && user?.uid && (
-        <div className="mb-6 bg-white rounded-xl border border-warm-200 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-warm-800">
-              You have an outstanding balance of {formatCurrency(balance.outstanding)}
-            </p>
-            <p className="text-xs text-warm-500 mt-0.5">
-              Pay securely with a credit or debit card via Stripe.
-            </p>
-          </div>
-          <ClientPaymentButton
-            clientId={user.uid}
-            clientName={user.displayName || "Client"}
-            clientEmail={user.email || null}
-            amountCents={Math.round(balance.outstanding * 100)}
-            variant="client"
-          />
         </div>
       )}
 

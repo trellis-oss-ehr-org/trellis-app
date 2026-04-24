@@ -25,13 +25,12 @@ from routes.assistant import router as assistant_router
 from routes.treatment_plans import router as treatment_plans_router
 from routes.billing import router as billing_router
 from routes.authorizations import router as authorizations_router
-from routes.credentialing import router as credentialing_router
 from routes.audit import router as audit_router
 from routes.health import router as health_router
 from routes.google_oauth import router as google_oauth_router
 from routes.push import router as push_router
 from routes.journal import router as journal_router
-from routes.license import router as license_router
+from routes.texting import router as texting_router
 
 # Configure PHI-safe logging before any other operations
 configure_safe_logging()
@@ -60,13 +59,12 @@ app.include_router(assistant_router, prefix="/api")
 app.include_router(treatment_plans_router, prefix="/api")
 app.include_router(billing_router, prefix="/api")
 app.include_router(authorizations_router, prefix="/api")
-app.include_router(credentialing_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
 app.include_router(google_oauth_router, prefix="/api")
 app.include_router(push_router, prefix="/api")
 app.include_router(journal_router, prefix="/api")
-app.include_router(license_router, prefix="/api")
+app.include_router(texting_router, prefix="/api")
 
 
 @app.on_event("shutdown")

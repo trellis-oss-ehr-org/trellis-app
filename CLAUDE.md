@@ -27,7 +27,6 @@ All secrets live in gitignored `.env` files. **Read these files whenever you nee
 - `OAUTH_TOKEN_ENCRYPTION_KEY` — Fernet key for encrypting stored OAuth tokens
 - `FRONTEND_BASE_URL`
 - `CRON_SECRET`
-- `TRELLIS_SERVICES_URL` — URL of the trellis-services server (for license key validation and paid features)
 
 **`backend/relay/.env`** contains:
 - `DATABASE_URL`
@@ -104,7 +103,7 @@ gcloud sql instances describe trellis-db --format='value(ipAddresses[0].ipAddres
 MY_IP=$(curl -s ifconfig.me)
 gcloud sql instances patch trellis-db --authorized-networks=$MY_IP/32
 ```
-- Apply all migrations from `db/migrations/` in order (001 through 029):
+- Apply all migrations from `db/migrations/` in order:
 ```bash
 for f in db/migrations/*.sql; do
   echo "Applying $f..."
@@ -190,7 +189,6 @@ GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8080/api/google/callback
 OAUTH_TOKEN_ENCRYPTION_KEY=<from Phase 5>
 FRONTEND_BASE_URL=http://localhost:5173
 CRON_SECRET=<generated above>
-TRELLIS_SERVICES_URL=https://trellis-services-608286927070.us-central1.run.app
 ```
 **DO NOT** add `DEV_MODE=1` — it bypasses JWT verification and must never be set in production.
 
@@ -229,8 +227,6 @@ make dev        # Start API (8080), Relay (8081), Frontend (5173)
 ```
 DATABASE_URL=postgresql://postgres:<DB_PASSWORD>@/trellis?host=/cloudsql/<PROJECT_ID>:<REGION>:trellis-db
 ```
-
-**IMPORTANT: Migrations 016-017 are missing** from the open-source release (they created `billing_accounts`). Migrations 018, 021_account_permissions, and 021_billing_sms will error — this is expected and does not affect core functionality.
 
 **Step 1: Build images with Cloud Build**
 
@@ -317,7 +313,7 @@ gcloud run deploy trellis-api \
   --add-cloudsql-instances=${PROJECT_ID}:us-central1:trellis-db \
   --memory=512Mi --cpu=1 --timeout=3600 \
   --min-instances=0 --max-instances=10 \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},DATABASE_URL=postgresql://postgres:<DB_PASSWORD>@/trellis?host=/cloudsql/${PROJECT_ID}:us-central1:trellis-db,GOOGLE_OAUTH_CLIENT_ID=<id>,GOOGLE_OAUTH_CLIENT_SECRET=<secret>,GOOGLE_OAUTH_REDIRECT_URI=<API_URL>/api/google/callback,OAUTH_TOKEN_ENCRYPTION_KEY=<key>,FRONTEND_BASE_URL=<FRONTEND_URL>,ALLOWED_ORIGINS=<FRONTEND_URL>,CRON_SECRET=<secret>,TRELLIS_SERVICES_URL=https://trellis-services-608286927070.us-central1.run.app"
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},DATABASE_URL=postgresql://postgres:<DB_PASSWORD>@/trellis?host=/cloudsql/${PROJECT_ID}:us-central1:trellis-db,GOOGLE_OAUTH_CLIENT_ID=<id>,GOOGLE_OAUTH_CLIENT_SECRET=<secret>,GOOGLE_OAUTH_REDIRECT_URI=<API_URL>/api/google/callback,OAUTH_TOKEN_ENCRYPTION_KEY=<key>,FRONTEND_BASE_URL=<FRONTEND_URL>,ALLOWED_ORIGINS=<FRONTEND_URL>,CRON_SECRET=<secret>"
 
 # Relay
 gcloud run deploy trellis-relay \
@@ -398,9 +394,6 @@ gcloud scheduler jobs create http trellis-reconfirmation \
   --time-zone="America/New_York"
 ```
 - Only create Meet recording fetch job if Workspace/delegation is enabled (Phase 10)
-
-### PHASE 12b — SMS Reminders
-SMS reminders are configured entirely within the app (Settings → Practice → SMS Reminders). Do not walk the user through this during setup — they can set it up themselves when ready. The SMS cron job should be created during Phase 12 if the user has already configured SMS in-app.
 
 ### PHASE 13 — Branding & Landing Page (optional)
 Once Trellis is fully deployed and working, offer to customize the look and feel. This is a fun, creative step — take your time with it.
@@ -515,7 +508,7 @@ The user may have customized branding files (Phase 13). If an upstream update to
 ---
 
 ## Overview
-Open-source EHR/RCM platform for solo behavioral health therapists. Automates the full workflow: client intake via AI voice agent → scheduling → session recording → note generation → billing document generation. Includes a client journal with AI reflective feedback (text, voice, and dictation) and a rolling context compaction system that maintains a living clinical portrait per client. Works with any Google account; Google Workspace only required for telehealth/Meet auto-recording.
+Open-source EHR platform for solo behavioral health therapists. Automates the full workflow: client intake via AI voice agent → scheduling → session recording → note generation → billing document generation. Includes a client journal with AI reflective feedback (text, voice, and dictation) and a rolling context compaction system that maintains a living clinical portrait per client. Works with any Google account; Google Workspace only required for telehealth/Meet auto-recording.
 
 ## Tech Stack
 - **Frontend:** React 18 + Vite + TypeScript + Tailwind CSS v4 + React Router v7
@@ -541,7 +534,7 @@ trellis-ehr/
 │   │   └── routes/        # Route modules (intake, documents, scheduling, clients)
 │   ├── relay/             # Gemini Live voice relay (WebSocket)
 │   └── shared/            # Shared Python: db.py, compaction.py, gcal.py, mailer.py, vision.py, alerts.py, note_generator.py
-├── db/migrations/         # Numbered SQL migration files (001-029)
+├── db/migrations/         # Numbered SQL migration files
 └── creation data/         # Planning docs, pitch deck
 ```
 
@@ -586,7 +579,7 @@ curl -s "https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accoun
 
 ## Architecture Decisions
 
-### Database Schema (29 migrations)
+### Database Schema
 - **`encounters`** — universal transcript/interaction table. Types: intake, portal, clinical, group. Sources: voice, form, chat, clinician. JSONB `data` column for type-specific structured data. `token_estimate` and `summary_version` columns for context compaction tracking.
 - **`clinical_notes`** — formal notes (SOAP/DAP/narrative) derived from encounters. Signing workflow: draft → review → signed → amended.
 - **`clients`** — central client profile. Firebase UID, demographics, contact, insurance fields. `context_summary` (rolling AI portrait), `summary_version` (compaction counter), `docs_warning_dismissed` (suppress unsigned docs warning).

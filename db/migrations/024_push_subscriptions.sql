@@ -2,7 +2,7 @@
 --
 -- Stores FCM tokens per client device. Tokens rotate independently and stale
 -- ones need individual cleanup, so this is a separate table (not JSONB on clients).
--- Also adds push_reminder_sent_at to appointments (matches sms_reminder_sent_at pattern).
+-- Also adds push_reminder_sent_at to appointments for idempotent reminder sends.
 
 BEGIN;
 

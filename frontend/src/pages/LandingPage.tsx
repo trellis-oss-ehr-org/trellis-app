@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { AuthModal } from "../components/AuthModal";
+import { signInWithEmail } from "../lib/firebase";
 
 /* ─── Feature data ─────────────────────────────────────────────────────── */
 
@@ -208,11 +209,28 @@ const comparisonData = [
 
 /* ─── Component ────────────────────────────────────────────────────────── */
 
+const DEMO_ACCOUNTS: Record<string, { email: string; password: string }> = {
+  clinician: { email: "demo-clinician@trellisehr.com", password: "TrellisDemo2026" },
+  client: { email: "demo-client@trellisehr.com", password: "TrellisDemo2026" },
+};
+
 export default function LandingPage() {
   const { user, practiceInitialized, inviteInfo } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"client" | "clinician">("client");
   const [prefillEmail, setPrefillEmail] = useState("");
+  const [searchParams] = useSearchParams();
+  const [demoLoading, setDemoLoading] = useState(false);
+
+  // Auto-login for demo: ?demo=clinician or ?demo=client
+  useEffect(() => {
+    const demoRole = searchParams.get("demo");
+    if (!demoRole || user || demoLoading) return;
+    const account = DEMO_ACCOUNTS[demoRole];
+    if (!account) return;
+    setDemoLoading(true);
+    signInWithEmail(account.email, account.password).catch(() => setDemoLoading(false));
+  }, [searchParams, user, demoLoading]);
 
   function openAuth(mode: "client" | "clinician", email?: string) {
     if (user) return;
@@ -223,6 +241,17 @@ export default function LandingPage() {
 
   const isNotInitialized = practiceInitialized === false;
   const isInvite = practiceInitialized === true && inviteInfo !== null;
+
+  if (demoLoading) {
+    return (
+      <div className="min-h-screen bg-warm-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-warm-500 text-sm">Signing into demo...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen overflow-hidden">

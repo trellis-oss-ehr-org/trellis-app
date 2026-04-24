@@ -10,7 +10,7 @@ Open-source, AI-native EHR for solo behavioral health therapists. Automates the 
 - **Note Generation** — AI-generated SOAP/DAP/narrative clinical notes from session transcripts
 - **Treatment Plans** — AI-assisted treatment plan creation with goals, objectives, and interventions
 - **Document Management** — Consent forms, HIPAA notices, and e-signatures
-- **Billing** — Superbill generation, CMS-1500 forms, ERA processing
+- **Billing** — Superbill generation, CMS-1500 forms, and 837P export
 - **Client Portal** — Clients can view appointments, sign documents, and complete intake
 - **Group Therapy** — Recurring groups, enrollment, attendance tracking
 - **HIPAA Compliant** — Audit logging, encryption at rest/in transit, session timeouts, role-based access
@@ -78,7 +78,7 @@ trellis/
 │   ├── api/               # FastAPI REST API (port 8080)
 │   ├── relay/             # Gemini Live voice relay (port 8081)
 │   └── shared/            # Shared: db, models, integrations
-└── db/migrations/         # SQL migrations (001–023)
+└── db/migrations/         # SQL migrations
 ```
 
 ## License

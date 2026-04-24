@@ -34,7 +34,6 @@ export interface AuthContextValue {
   practiceInitialized: boolean | null;
   cashOnly: boolean;
   bookingEnabled: boolean;
-  licensedFeatures: Record<string, boolean>;
   inviteToken: string | null;
   inviteInfo: InviteInfo | null;
   needsClinicianPicker: boolean;
@@ -64,7 +63,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [practiceInitialized, setPracticeInitialized] = useState<boolean | null>(null);
   const [cashOnly, setCashOnly] = useState(false);
   const [bookingEnabled, setBookingEnabled] = useState(true);
-  const [licensedFeatures, setLicensedFeatures] = useState<Record<string, boolean>>({});
   const [practiceStatusType, setPracticeStatusType] = useState<string | null>(null);
   const [inviteToken] = useState<string | null>(getInviteTokenFromURL);
   const [inviteInfo, setInviteInfo] = useState<InviteInfo | null>(null);
@@ -227,7 +225,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setPracticeType(data.practice.type || null);
             setCashOnly(data.practice.cash_only || false);
             setBookingEnabled(data.practice.booking_enabled !== false);
-            setLicensedFeatures(data.practice.licensed_features || {});
           }
         } else {
           // Not registered — auto-register based on practice state
@@ -336,7 +333,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user, loading, role, roleLoading, registered, getIdToken, setRole, registerRole,
         switchRole, practiceId, practiceType, practiceRole, isOwner, clinician,
-        practiceInitialized, cashOnly, bookingEnabled, licensedFeatures, inviteToken, inviteInfo, needsClinicianPicker, registrationError, completeRegistration,
+        practiceInitialized, cashOnly, bookingEnabled, inviteToken, inviteInfo, needsClinicianPicker, registrationError, completeRegistration,
       }}
     >
       {children}

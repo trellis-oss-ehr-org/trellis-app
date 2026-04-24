@@ -2,10 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { ICD10Search } from "../components/billing/ICD10Search";
-import ERADetailView, { ERAData } from "../components/billing/ERADetailView";
 import ClaimStatusBadge from "../components/billing/ClaimStatusBadge";
-import EligibilityCard from "../components/billing/EligibilityCard";
-import AppealDraftModal from "../components/billing/AppealDraftModal";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -100,22 +97,6 @@ export default function ClaimReviewPage() {
   const [downloadingCms, setDownloadingCms] = useState(false);
   const [downloadingEdi, setDownloadingEdi] = useState(false);
   const [markingSubmitted, setMarkingSubmitted] = useState(false);
-  const [submittingClaim, setSubmittingClaim] = useState(false);
-  const [billingConnected, setBillingConnected] = useState(false);
-  const [eraData, setEraData] = useState<ERAData | null>(null);
-  const [eraLoading, setEraLoading] = useState(false);
-
-  // Denial info (shown when claim is denied)
-  const [denialInfo, setDenialInfo] = useState<{
-    denial_category: { category: string; label: string; description: string; is_appealable: boolean; typical_resolution: string } | null;
-    denial_codes: { reason_code: string; description: string; group_code: string }[];
-    suggestions: { action: string; description: string; auto_fixable: boolean; priority: string }[];
-    can_auto_resubmit: boolean;
-    denial_ids: string[];
-  } | null>(null);
-
-  // Appeal modal
-  const [appealModalDenialId, setAppealModalDenialId] = useState<string | null>(null);
 
   // Editable form state
   const [cptCode, setCptCode] = useState("");
@@ -137,12 +118,10 @@ export default function ClaimReviewPage() {
   const loadData = useCallback(async () => {
     if (!superbillId) return;
     try {
-      const [sb, cmsData, billingSettings] = await Promise.all([
+      const [sb, cmsData] = await Promise.all([
         api.get<Superbill>(`/api/superbills/${superbillId}`),
         api.get<{ cms1500_fields: CMS1500Fields }>(`/api/superbills/${superbillId}/cms1500/data`),
-        api.get<{ connected: boolean }>("/api/billing/settings").catch(() => null),
       ]);
-      if (billingSettings) setBillingConnected(billingSettings.connected);
 
       // Normalize diagnosis_codes
       const dxCodes =
@@ -174,61 +153,6 @@ export default function ClaimReviewPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  // Fetch ERA data when superbill has been adjudicated/paid/denied
-  const showEra = superbill
-    ? ["submitted", "paid", "outstanding", "adjudicated", "denied"].includes(superbill.status)
-    : false;
-
-  useEffect(() => {
-    if (!superbillId || !showEra) return;
-    let cancelled = false;
-    setEraLoading(true);
-    api
-      .get<ERAData>(`/api/superbills/${superbillId}/era`)
-      .then((data) => {
-        if (!cancelled) setEraData(data);
-      })
-      .catch(() => {
-        // 404 = no ERA data yet, which is normal for submitted claims
-        if (!cancelled) setEraData(null);
-      })
-      .finally(() => {
-        if (!cancelled) setEraLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api, superbillId, showEra]);
-
-  // Fetch denial info for denied claims
-  const isDenied = superbill?.status === "denied" || superbill?.status === "outstanding";
-  useEffect(() => {
-    if (!superbillId || !isDenied) return;
-    let cancelled = false;
-    // Try to get denial detail using superbill ID as the external reference
-    api
-      .get<any>(`/api/billing/denials/${superbillId}`)
-      .then((data) => {
-        if (!cancelled) {
-          // Extract denial IDs from the response (list of denials for this superbill)
-          const denialsList = data.denials || [];
-          const ids = denialsList.map((d: any) => d.id).filter(Boolean);
-          setDenialInfo({
-            denial_category: data.denial_category || (denialsList[0]?.denial_category ?? null),
-            denial_codes: data.denial_codes || [],
-            suggestions: data.suggestions || [],
-            can_auto_resubmit: data.can_auto_resubmit || false,
-            denial_ids: ids,
-          });
-        }
-      })
-      .catch(() => {
-        // No denial data — fine, the billing service may not have it
-        if (!cancelled) setDenialInfo(null);
-      });
-    return () => { cancelled = true; };
-  }, [api, superbillId, isDenied]);
 
   const isEditable = superbill?.status === "generated";
 
@@ -328,20 +252,6 @@ export default function ClaimReviewPage() {
       alert(err.message || "Failed to mark as submitted.");
     } finally {
       setMarkingSubmitted(false);
-    }
-  }
-
-  async function handleSubmitClaim() {
-    if (!superbillId) return;
-    setSubmittingClaim(true);
-    try {
-      await api.post(`/api/superbills/${superbillId}/submit`, {});
-      await loadData();
-    } catch (err: any) {
-      console.error("Failed to submit claim:", err);
-      alert(err.message || "Failed to submit claim to billing service.");
-    } finally {
-      setSubmittingClaim(false);
     }
   }
 
@@ -460,18 +370,6 @@ export default function ClaimReviewPage() {
             )}
             837P
           </button>
-          {billingConnected && isEditable && (
-            <button
-              onClick={handleSubmitClaim}
-              disabled={submittingClaim}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              {submittingClaim && (
-                <span className="w-4 h-4 block border-2 border-green-200 border-t-green-600 rounded-full animate-spin" />
-              )}
-              Submit Claim
-            </button>
-          )}
           {isEditable && (
             <button
               onClick={handleMarkSubmitted}
@@ -500,88 +398,9 @@ export default function ClaimReviewPage() {
         </div>
       )}
 
-      {!isEditable && !denialInfo && (
+      {!isEditable && (
         <div className="mb-4 px-4 py-2 rounded-lg text-sm bg-amber-50 text-amber-700 border border-amber-200">
           This claim has been {superbill.status}. Editing is only available for claims with "generated" status.
-        </div>
-      )}
-
-      {/* Denial Banner */}
-      {denialInfo && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 overflow-hidden">
-          <div className="px-5 py-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-red-600">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                  </svg>
-                  <h3 className="font-semibold text-red-800">
-                    Claim Denied{denialInfo.denial_category ? ` \u2014 ${denialInfo.denial_category.label}` : ""}
-                  </h3>
-                  {denialInfo.can_auto_resubmit && (
-                    <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700 border border-green-200">
-                      Auto-resubmit eligible
-                    </span>
-                  )}
-                </div>
-                {denialInfo.denial_category && (
-                  <p className="text-sm text-red-700 mb-2">{denialInfo.denial_category.description}</p>
-                )}
-                {/* Denial codes */}
-                {denialInfo.denial_codes.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {denialInfo.denial_codes.map((code, i) => (
-                      <span key={`${code.reason_code}-${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-100 text-red-800 text-xs font-medium">
-                        <span className="font-mono font-bold">{code.reason_code}</span>
-                        <span className="text-red-600">{code.description}</span>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {/* Top suggestions */}
-                {denialInfo.suggestions.length > 0 && (
-                  <div className="space-y-1 mt-2">
-                    <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">Suggested Actions:</p>
-                    {denialInfo.suggestions.slice(0, 3).map((s, i) => (
-                      <div key={i} className="flex items-start gap-2 text-sm text-red-700">
-                        <span className="text-red-400 mt-0.5">&#8226;</span>
-                        <span>{s.description}</span>
-                        {s.auto_fixable && (
-                          <span className="shrink-0 inline-flex px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
-                            Auto-fixable
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="shrink-0 flex flex-col gap-2">
-                {denialInfo.denial_ids?.length > 0 && denialInfo.denial_ids[0] && (
-                  <button
-                    onClick={() => setAppealModalDenialId(denialInfo.denial_ids[0]!)}
-                    className="px-4 py-2 text-sm font-medium rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition-colors"
-                  >
-                    Generate Appeal
-                  </button>
-                )}
-                <Link
-                  to="/billing/denials"
-                  className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors text-center"
-                >
-                  Correct & Resubmit
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Eligibility Check */}
-      {superbill.client_id && (
-        <div className="mb-5">
-          <EligibilityCard clientId={superbill.client_id} />
         </div>
       )}
 
@@ -893,29 +712,6 @@ export default function ClaimReviewPage() {
             </div>
           </FormSection>
 
-          {/* ERA / Payment Posting */}
-          {showEra && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-teal-600">
-                  <path
-                    fillRule="evenodd"
-                    d="M1 4a1 1 0 011-1h16a1 1 0 011 1v8a1 1 0 01-1 1H2a1 1 0 01-1-1V4zm12 4a3 3 0 11-6 0 3 3 0 016 0zM4 9a1 1 0 100-2 1 1 0 000 2zm12-1a1 1 0 11-2 0 1 1 0 012 0z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-                <h3 className="text-sm font-semibold text-warm-700">
-                  ERA / Payment Posting
-                </h3>
-              </div>
-              <ERADetailView
-                eraData={eraData}
-                loading={eraLoading}
-                chargedAmount={superbill?.fee}
-              />
-            </div>
-          )}
-
           {/* Provider Info (read-only) */}
           <FormSection title="Provider Information" readOnly>
             <div className="grid grid-cols-2 gap-4">
@@ -1035,16 +831,6 @@ export default function ClaimReviewPage() {
           </div>
         </div>
       </div>
-
-      {/* Appeal Draft Modal */}
-      {appealModalDenialId && (
-        <AppealDraftModal
-          denialId={appealModalDenialId}
-          isOpen={true}
-          onClose={() => setAppealModalDenialId(null)}
-          onUpdate={loadData}
-        />
-      )}
     </div>
   );
 }

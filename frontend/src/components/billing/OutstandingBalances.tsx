@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../../hooks/useApi";
-import ClientPaymentButton from "./ClientPaymentButton";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,29 +48,11 @@ function formatCurrency(amount: number | null | undefined): string {
 // Component
 // ---------------------------------------------------------------------------
 
-interface OutstandingBalancesProps {
-  billingConnected: boolean;
-}
-
-export default function OutstandingBalances({ billingConnected }: OutstandingBalancesProps) {
+export default function OutstandingBalances() {
   const api = useApi();
   const [data, setData] = useState<OutstandingBalancesResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [sendingLinkFor] = useState<string | null>(null);
   const [emailingStatementFor, setEmailingStatementFor] = useState<string | null>(null);
-
-  // Payment link modal state
-  const [paymentModal, setPaymentModal] = useState<{
-    clientId: string;
-    clientName: string;
-    clientEmail: string | null;
-    balance: number;
-  } | null>(null);
-  const [paymentLinkResult, setPaymentLinkResult] = useState<{
-    url: string;
-    amount: number;
-  } | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -117,24 +98,6 @@ export default function OutstandingBalances({ billingConnected }: OutstandingBal
     } catch (err) {
       console.error("Failed to download statement:", err);
       alert("Failed to generate patient statement.");
-    }
-  }
-
-  async function handleCopyLink(url: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
-    } catch {
-      // Fallback
-      const ta = document.createElement("textarea");
-      ta.value = url;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
     }
   }
 
@@ -233,32 +196,6 @@ export default function OutstandingBalances({ billingConnected }: OutstandingBal
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {/* Send Payment Link */}
-                      {billingConnected && (
-                        <button
-                          onClick={() =>
-                            setPaymentModal({
-                              clientId: client.client_id,
-                              clientName: client.client_name,
-                              clientEmail: client.client_email,
-                              balance: client.outstanding_balance,
-                            })
-                          }
-                          disabled={sendingLinkFor === client.client_id}
-                          className="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors disabled:opacity-50 flex items-center gap-1"
-                          title="Send payment link"
-                        >
-                          {sendingLinkFor === client.client_id ? (
-                            <span className="w-3 h-3 block border-2 border-teal-200 border-t-teal-600 rounded-full animate-spin" />
-                          ) : (
-                            <svg viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                              <path d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 001.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" />
-                            </svg>
-                          )}
-                          Payment Link
-                        </button>
-                      )}
-
                       {/* Email Statement */}
                       <button
                         onClick={() => handleEmailStatement(client.client_id)}
@@ -312,114 +249,6 @@ export default function OutstandingBalances({ billingConnected }: OutstandingBal
         </div>
       </div>
 
-      {/* Payment Link Modal - placeholder for per-client use */}
-      {paymentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => {
-              setPaymentModal(null);
-              setPaymentLinkResult(null);
-            }}
-          />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6 mx-4">
-            <h3 className="font-display text-lg font-bold text-warm-800 mb-1">
-              Send Payment Link
-            </h3>
-            <p className="text-sm text-warm-500 mb-4">
-              Generate a Stripe payment link for {paymentModal.clientName}.
-            </p>
-
-            {!paymentLinkResult ? (
-              <div className="space-y-4">
-                <div className="bg-warm-50 rounded-xl p-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-warm-600">Outstanding Balance</span>
-                    <span className="text-lg font-bold text-red-600">
-                      {formatCurrency(paymentModal.balance)}
-                    </span>
-                  </div>
-                </div>
-
-                {paymentModal.clientEmail && (
-                  <div>
-                    <label className="block text-sm font-medium text-warm-700 mb-1">
-                      Patient Email
-                    </label>
-                    <p className="text-sm text-warm-600 bg-warm-50 rounded-lg px-3 py-2">
-                      {paymentModal.clientEmail}
-                    </p>
-                  </div>
-                )}
-
-                <p className="text-xs text-warm-400">
-                  This will generate a Stripe checkout link for the full outstanding balance. The link opens in a new tab so you can share it with the client.
-                </p>
-
-                <div className="flex items-center justify-end gap-3 pt-2">
-                  <button
-                    onClick={() => {
-                      setPaymentModal(null);
-                      setPaymentLinkResult(null);
-                    }}
-                    className="px-4 py-2 text-sm font-medium text-warm-600 hover:text-warm-800 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <ClientPaymentButton
-                    clientId={paymentModal.clientId}
-                    clientName={paymentModal.clientName}
-                    clientEmail={paymentModal.clientEmail}
-                    amountCents={Math.round(paymentModal.balance * 100)}
-                    variant="clinician"
-                    onSuccess={() => {
-                      setPaymentModal(null);
-                      setPaymentLinkResult(null);
-                    }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
-                  <p className="text-sm text-teal-800 font-medium mb-2">
-                    Payment link generated!
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={paymentLinkResult.url}
-                      className="flex-1 px-3 py-2 text-xs bg-white border border-teal-200 rounded-lg text-warm-600 truncate"
-                    />
-                    <button
-                      onClick={() => handleCopyLink(paymentLinkResult.url)}
-                      className="px-3 py-2 text-xs font-medium rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition-colors whitespace-nowrap"
-                    >
-                      {copiedLink ? "Copied!" : "Copy"}
-                    </button>
-                  </div>
-                  <p className="text-xs text-teal-600 mt-2">
-                    Amount: {formatCurrency(paymentLinkResult.amount)}
-                  </p>
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    onClick={() => {
-                      setPaymentModal(null);
-                      setPaymentLinkResult(null);
-                    }}
-                    className="px-4 py-2 text-sm font-medium text-warm-600 hover:text-warm-800 transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </>
   );
 }
