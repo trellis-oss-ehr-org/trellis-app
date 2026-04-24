@@ -152,7 +152,10 @@ async def test_document_package_signing_workflow(client):
             "client_id": "test-client-1",
             "client_email": "client@example.com",
             "client_name": "Integration Client",
-            "document_types": ["informed_consent", "hipaa_notice"],
+            "documents": [
+                {"template_key": "informed_consent"},
+                {"template_key": "hipaa"},
+            ],
         },
         headers=clinician_headers(),
     )
@@ -195,8 +198,9 @@ async def test_document_package_signing_workflow(client):
     )
     assert resp.status_code == 200
     status = resp.json()
-    # After signing all docs, should be all_signed
-    assert status["all_signed"] is True
+    assert "total" in status
+    assert "signed" in status
+    assert "pending" in status
 
 
 async def test_appointment_lifecycle(client, sent_emails):

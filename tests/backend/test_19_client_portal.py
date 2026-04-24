@@ -177,6 +177,11 @@ async def test_client_document_signing_status(client):
         json={"role": "clinician"},
         headers=clinician_headers(),
     )
+    await client.post(
+        "/api/auth/register",
+        json={"role": "client"},
+        headers=client_headers(),
+    )
     resp = await client.get(
         "/api/documents/status/test-client-1",
         headers=clinician_headers(),
@@ -184,7 +189,9 @@ async def test_client_document_signing_status(client):
     assert resp.status_code == 200
     data = resp.json()
     assert "packages" in data
-    assert "all_signed" in data
+    assert "total" in data
+    assert "signed" in data
+    assert "pending" in data
 
 
 async def test_client_stored_signature_flow(client):

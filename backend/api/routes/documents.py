@@ -1,9 +1,9 @@
 """Document signing endpoints.
 
 HIPAA Access Control:
-  - GET /documents/signing-status — authenticated user (own status) or clinician
-  - GET /documents/packages/{id}  — enforce_client_owns_resource (client) or clinician
-  - POST /documents/sign          — authenticated user, signs own documents only
+  - Clinician package/status/reminder actions are scoped to their active practice
+  - GET /documents/packages/{id}  — clients can view own packages; clinicians only in-practice packages
+  - POST /documents/sign          — authenticated clients sign their own documents only
   - Documents use SHA-256 content hashing to verify integrity
   - Signer IP, user-agent, and timestamp recorded for legal compliance
   - All reads and writes logged to audit_events
@@ -17,7 +17,13 @@ import sys
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from auth import get_current_user, get_current_user_with_role, require_role, enforce_client_owns_resource
+from auth import (
+    get_current_user,
+    get_current_user_with_role,
+    require_role,
+    require_practice_member,
+    enforce_client_owns_resource,
+)
 
 sys.path.insert(0, "../shared")
 from db import (
@@ -33,6 +39,7 @@ from db import (
     get_stored_signature,
     get_client_document_signing_status,
     get_client,
+    get_clinician,
     get_practice_profile,
     get_pool,
     log_audit_event,
@@ -67,6 +74,58 @@ def _content_hash(content: dict) -> str:
     """SHA-256 of deterministically-serialized content."""
     canonical = json.dumps(content, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+async def _client_belongs_to_practice(client_id: str, practice_id: str) -> bool:
+    """Return True when client_id is assigned to a clinician in practice_id."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM clients c
+            JOIN clinicians cl ON cl.firebase_uid = c.primary_clinician_id
+            WHERE c.firebase_uid = $1
+              AND cl.practice_id = $2::uuid
+        ) AS belongs
+        """,
+        client_id,
+        practice_id,
+    )
+    return bool(row and row["belongs"])
+
+
+async def _ensure_client_belongs_to_practice(client_id: str, practice_id: str) -> None:
+    if not await _client_belongs_to_practice(client_id, practice_id):
+        raise HTTPException(404, "Client not found")
+
+
+async def _get_active_clinician_practice_id(user: dict) -> str:
+    """Resolve practice_id for mixed client/clinician endpoints."""
+    if user.get("practice_id"):
+        return user["practice_id"]
+
+    clinician = await get_clinician(user["uid"])
+    if not clinician or clinician.get("status") != "active":
+        raise HTTPException(403, "Active clinician practice membership required")
+    return clinician["practice_id"]
+
+
+async def _ensure_user_can_access_client(user: dict, client_id: str | None) -> str | None:
+    """Authorize mixed client/clinician document access.
+
+    Returns practice_id for clinician callers and None for client callers.
+    """
+    if user.get("role") == "clinician":
+        practice_id = await _get_active_clinician_practice_id(user)
+        await _ensure_client_belongs_to_practice(client_id or "", practice_id)
+        return practice_id
+
+    if user.get("role") != "client":
+        raise HTTPException(403, "Access denied")
+
+    enforce_client_owns_resource(user, client_id)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +221,15 @@ async def auto_generate_consent_package(
     Returns the package_id on success, or None on failure.
     """
     try:
+        clinician = await get_clinician(clinician_uid)
+        if not clinician or clinician.get("status") != "active":
+            logger.warning("Skipped consent package generation: clinician is not active")
+            return None
+
+        if not await _client_belongs_to_practice(client_id, clinician["practice_id"]):
+            logger.warning("Skipped consent package generation: client is outside clinician practice")
+            return None
+
         # Load client profile for template population
         client_data = await get_client(client_id)
 
@@ -311,7 +379,9 @@ class CreatePackageRequest(BaseModel):
 
 class SignDocumentRequest(BaseModel):
     signature_data: str
-    content: dict
+    # Kept for older clients, but ignored. The server hashes the stored
+    # document content so signed content integrity does not depend on browser input.
+    content: dict | None = None
 
 
 class StoreSignatureRequest(BaseModel):
@@ -326,9 +396,16 @@ class StoreSignatureRequest(BaseModel):
 async def create_package(
     body: CreatePackageRequest,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Create a document package with a list of documents. Clinician only."""
+    await _ensure_client_belongs_to_practice(body.client_id, user["practice_id"])
+    if not body.documents:
+        raise HTTPException(400, "At least one document is required")
+    for spec in body.documents:
+        if spec.template_key not in TEMPLATES:
+            raise HTTPException(400, f"Unknown template: {spec.template_key}")
+
     package_id = await create_document_package(
         client_id=body.client_id,
         created_by=user["uid"],
@@ -343,9 +420,6 @@ async def create_package(
 
     doc_ids = []
     for i, spec in enumerate(body.documents):
-        if spec.template_key not in TEMPLATES:
-            raise HTTPException(400, f"Unknown template: {spec.template_key}")
-
         content = spec.content or _build_content(
             spec.template_key, body.client_name, body.financial_data,
             client_data=client_data, practice_data=practice_data,
@@ -378,10 +452,10 @@ async def create_package(
 async def send_package(
     package_id: str,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Send the signing email to the client. Clinician only."""
-    pkg = await get_document_package(package_id)
+    pkg = await get_document_package(package_id, practice_id=user["practice_id"])
     if not pkg:
         raise HTTPException(404, "Package not found")
 
@@ -466,13 +540,23 @@ async def get_package(
     request: Request,
     user: dict = Depends(get_current_user_with_role),
 ):
-    """Load a package and its documents. Clients can only view their own."""
-    pkg = await get_document_package(package_id)
+    """Load a package and its documents.
+
+    Clients can only view their own packages. Clinicians can only view
+    packages for clients assigned to a clinician in their practice.
+    """
+    practice_id = None
+    if user.get("role") == "clinician":
+        practice_id = await _get_active_clinician_practice_id(user)
+    elif user.get("role") != "client":
+        raise HTTPException(403, "Access denied")
+
+    pkg = await get_document_package(package_id, practice_id=practice_id)
     if not pkg:
         raise HTTPException(404, "Package not found")
 
-    # Clients can only view packages that belong to them
-    enforce_client_owns_resource(user, pkg.get("client_id"))
+    if user.get("role") == "client":
+        enforce_client_owns_resource(user, pkg.get("client_id"))
 
     await log_audit_event(
         user_id=user["uid"],
@@ -495,21 +579,23 @@ async def sign_doc(
     doc_id: str,
     body: SignDocumentRequest,
     request: Request,
-    user: dict = Depends(get_current_user_with_role),
+    user: dict = Depends(require_role("client")),
 ):
     """Sign a single document. Clients can only sign their own."""
+    doc_owner = await get_document_owner(doc_id)
+    if not doc_owner:
+        raise HTTPException(404, "Document not found")
+
+    enforce_client_owns_resource(user, doc_owner)
+
     doc = await get_document(doc_id)
     if not doc:
         raise HTTPException(404, "Document not found")
 
-    # Clients can only sign documents in packages that belong to them
-    doc_owner = await get_document_owner(doc_id)
-    enforce_client_owns_resource(user, doc_owner)
-
     if doc["status"] == "signed":
         raise HTTPException(400, "Document already signed")
 
-    content_h = _content_hash(body.content)
+    content_h = _content_hash(doc["content"] or {})
     ip = _client_ip(request)
     ua = request.headers.get("user-agent", "")
 
@@ -599,12 +685,12 @@ async def get_client_doc_status(
 ):
     """Get document signing status for a specific client.
 
-    Clinicians can view any client's status. Clients can only view their own.
+    Clinicians can view in-practice client status. Clients can only view their own.
     Returns {total, signed, pending, packages: [...]}.
     """
-    enforce_client_owns_resource(user, client_id)
+    practice_id = await _ensure_user_can_access_client(user, client_id)
 
-    status = await get_client_document_signing_status(client_id)
+    status = await get_client_document_signing_status(client_id, practice_id=practice_id)
 
     await log_audit_event(
         user_id=user["uid"],
@@ -622,9 +708,11 @@ async def get_client_doc_status(
 async def dismiss_docs_warning(
     client_id: str,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Dismiss the unsigned-documents warning for a specific client."""
+    await _ensure_client_belongs_to_practice(client_id, user["practice_id"])
+
     pool = await get_pool()
     try:
         await pool.execute(
@@ -651,14 +739,19 @@ async def dismiss_docs_warning(
 async def send_docs_reminder(
     client_id: str,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Send a reminder email to a client about unsigned documents."""
+    await _ensure_client_belongs_to_practice(client_id, user["practice_id"])
+
     client = await get_client(client_id)
     if not client:
         raise HTTPException(404, "Client not found")
 
-    status = await get_client_document_signing_status(client_id)
+    status = await get_client_document_signing_status(
+        client_id,
+        practice_id=user["practice_id"],
+    )
     pending_packages = [p for p in (status.get("packages") or []) if p["pending"] > 0]
 
     if not pending_packages:

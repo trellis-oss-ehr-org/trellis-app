@@ -1,4 +1,7 @@
 """Tests for document package and signing endpoints."""
+import hashlib
+import json
+
 import pytest
 from conftest import clinician_headers, client_headers
 
@@ -40,6 +43,7 @@ async def _create_package(client):
 async def test_create_package(client):
     """POST /api/documents/packages creates package with documents."""
     await _register_clinician(client)
+    await _register_client(client)
     resp = await _create_package(client)
     assert resp.status_code == 200
     data = resp.json()
@@ -50,6 +54,7 @@ async def test_create_package(client):
 async def test_get_package(client):
     """GET /api/documents/packages/{id} returns package with documents."""
     await _register_clinician(client)
+    await _register_client(client)
     create_resp = await _create_package(client)
     pkg_id = create_resp.json()["package_id"]
 
@@ -67,6 +72,7 @@ async def test_get_package(client):
 async def test_send_package(client, sent_emails):
     """POST /api/documents/packages/{id}/send sends signing email."""
     await _register_clinician(client)
+    await _register_client(client)
     create_resp = await _create_package(client)
     pkg_id = create_resp.json()["package_id"]
 
@@ -99,6 +105,68 @@ async def test_sign_document(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "signed"
+
+
+async def test_clinician_cannot_sign_client_document(client):
+    """POST /api/documents/{doc_id}/sign rejects clinician signatures."""
+    await _register_clinician(client)
+    await _register_client(client)
+    create_resp = await _create_package(client)
+    doc_id = create_resp.json()["document_ids"][0]
+
+    resp = await client.post(
+        f"/api/documents/{doc_id}/sign",
+        json={
+            "signature_data": "data:image/png;base64,fakeSignature",
+            "content": {"client_name": "Tampered Client"},
+        },
+        headers=clinician_headers(),
+    )
+
+    assert resp.status_code == 403
+
+
+async def test_sign_document_hashes_stored_content(client):
+    """Signing hashes server-stored content, not caller-supplied JSON."""
+    await _register_clinician(client)
+    await _register_client(client)
+    create_resp = await _create_package(client)
+    data = create_resp.json()
+    pkg_id = data["package_id"]
+    doc_id = data["document_ids"][0]
+
+    resp = await client.post(
+        f"/api/documents/{doc_id}/sign",
+        json={
+            "signature_data": "data:image/png;base64,fakeSignature",
+            "content": {"client_name": "Tampered Client"},
+        },
+        headers=client_headers(),
+    )
+    assert resp.status_code == 200
+
+    pkg_resp = await client.get(
+        f"/api/documents/packages/{pkg_id}",
+        headers=client_headers(),
+    )
+    assert pkg_resp.status_code == 200
+    signed_doc = next(d for d in pkg_resp.json()["documents"] if d["id"] == doc_id)
+    expected_hash = hashlib.sha256(
+        json.dumps(
+            signed_doc["content"],
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    tampered_hash = hashlib.sha256(
+        json.dumps(
+            {"client_name": "Tampered Client"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    assert signed_doc["content_hash"] == expected_hash
+    assert signed_doc["content_hash"] != tampered_hash
 
 
 async def test_sign_already_signed_document(client):
@@ -160,6 +228,7 @@ async def test_get_package_not_found(client):
 async def test_document_signing_status(client):
     """GET /api/documents/status/{client_id} returns status summary."""
     await _register_clinician(client)
+    await _register_client(client)
     await _create_package(client)
 
     resp = await client.get(

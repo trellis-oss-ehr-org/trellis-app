@@ -1052,13 +1052,31 @@ async def create_document_package(
     return str(row["id"])
 
 
-async def get_document_package(package_id: str) -> dict | None:
-    """Fetch a package and all its documents."""
+async def get_document_package(package_id: str, practice_id: str | None = None) -> dict | None:
+    """Fetch a package and all its documents.
+
+    When practice_id is provided, only returns packages for clients assigned
+    to a clinician in that practice.
+    """
     pool = await get_pool()
-    pkg = await pool.fetchrow(
-        "SELECT * FROM document_packages WHERE id = $1::uuid",
-        package_id,
-    )
+    if practice_id:
+        pkg = await pool.fetchrow(
+            """
+            SELECT dp.*
+            FROM document_packages dp
+            JOIN clients c ON c.firebase_uid = dp.client_id
+            JOIN clinicians cl ON cl.firebase_uid = c.primary_clinician_id
+            WHERE dp.id = $1::uuid
+              AND cl.practice_id = $2::uuid
+            """,
+            package_id,
+            practice_id,
+        )
+    else:
+        pkg = await pool.fetchrow(
+            "SELECT * FROM document_packages WHERE id = $1::uuid",
+            package_id,
+        )
     if not pkg:
         return None
 
@@ -2231,27 +2249,54 @@ async def reschedule_appointment(
 # Document Signing Status
 # ---------------------------------------------------------------------------
 
-async def get_client_document_signing_status(client_id: str) -> dict:
+async def get_client_document_signing_status(
+    client_id: str,
+    practice_id: str | None = None,
+) -> dict:
     """Get document signing status summary for a client.
+
+    When practice_id is provided, only returns status for clients assigned
+    to a clinician in that practice.
 
     Returns {total: int, signed: int, pending: int, packages: list[dict]}.
     """
     pool = await get_pool()
-    rows = await pool.fetch(
-        """
-        SELECT dp.id AS package_id, dp.status AS package_status,
-               dp.created_at AS package_created_at,
-               COUNT(d.id) AS total_docs,
-               COUNT(d.id) FILTER (WHERE d.status = 'signed') AS signed_docs,
-               COUNT(d.id) FILTER (WHERE d.status = 'pending') AS pending_docs
-        FROM document_packages dp
-        JOIN documents d ON d.package_id = dp.id
-        WHERE dp.client_id = $1
-        GROUP BY dp.id
-        ORDER BY dp.created_at DESC
-        """,
-        client_id,
-    )
+    if practice_id:
+        rows = await pool.fetch(
+            """
+            SELECT dp.id AS package_id, dp.status AS package_status,
+                   dp.created_at AS package_created_at,
+                   COUNT(d.id) AS total_docs,
+                   COUNT(d.id) FILTER (WHERE d.status = 'signed') AS signed_docs,
+                   COUNT(d.id) FILTER (WHERE d.status = 'pending') AS pending_docs
+            FROM document_packages dp
+            JOIN documents d ON d.package_id = dp.id
+            JOIN clients c ON c.firebase_uid = dp.client_id
+            JOIN clinicians cl ON cl.firebase_uid = c.primary_clinician_id
+            WHERE dp.client_id = $1
+              AND cl.practice_id = $2::uuid
+            GROUP BY dp.id
+            ORDER BY dp.created_at DESC
+            """,
+            client_id,
+            practice_id,
+        )
+    else:
+        rows = await pool.fetch(
+            """
+            SELECT dp.id AS package_id, dp.status AS package_status,
+                   dp.created_at AS package_created_at,
+                   COUNT(d.id) AS total_docs,
+                   COUNT(d.id) FILTER (WHERE d.status = 'signed') AS signed_docs,
+                   COUNT(d.id) FILTER (WHERE d.status = 'pending') AS pending_docs
+            FROM document_packages dp
+            JOIN documents d ON d.package_id = dp.id
+            WHERE dp.client_id = $1
+            GROUP BY dp.id
+            ORDER BY dp.created_at DESC
+            """,
+            client_id,
+        )
     total = sum(r["total_docs"] for r in rows)
     signed = sum(r["signed_docs"] for r in rows)
     pending = sum(r["pending_docs"] for r in rows)
