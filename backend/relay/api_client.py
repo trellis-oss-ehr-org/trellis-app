@@ -49,7 +49,7 @@ async def get_practice_profile(token: str | None = None, clinician_uid: str | No
             logger.warning("Practice profile not found or error: %s", resp.status_code)
             return None
     except Exception as e:
-        logger.error("Failed to fetch practice profile: %s: %s", type(e).__name__, e)
+        logger.error("Failed to fetch practice profile: %s", type(e).__name__)
         return None
 
 
@@ -96,10 +96,10 @@ async def get_available_slots(
             if resp.status_code == 200:
                 data = resp.json()
                 return data.get("slots", [])
-            logger.warning("Failed to fetch slots: %s %s", resp.status_code, resp.text)
+            logger.warning("Failed to fetch slots: %s", resp.status_code)
             return []
     except Exception as e:
-        logger.error("Failed to fetch available slots: %s: %s", type(e).__name__, e)
+        logger.error("Failed to fetch available slots: %s", type(e).__name__)
         return []
 
 
@@ -155,8 +155,8 @@ async def book_appointment(
                 appointments = data.get("appointments", [])
                 if appointments:
                     return appointments[0]
-            logger.warning("Failed to book appointment: %s %s", resp.status_code, resp.text)
+            logger.warning("Failed to book appointment: %s", resp.status_code)
             return None
     except Exception as e:
-        logger.error("Failed to book appointment: %s: %s", type(e).__name__, e)
+        logger.error("Failed to book appointment: %s", type(e).__name__)
         return None

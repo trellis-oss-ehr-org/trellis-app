@@ -8,23 +8,37 @@ POST /api/health — verifies all integrations:
   - Google Drive API access
   - Speech-to-Text API access
 
-Returns status for each check. No auth required — this is used during
-initial deployment to verify everything is wired up correctly.
+Returns status for each check. The detailed endpoint requires a shared
+health-check secret because it exposes operational integration status.
 
-Does NOT expose any PHI or sensitive data.
+Does NOT expose PHI, but does expose operational metadata.
 """
 import logging
+import hmac
 import os
 import sys
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException, Depends
 
 sys.path.insert(0, "../shared")
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+HEALTH_CHECK_SECRET = os.getenv("HEALTH_CHECK_SECRET", os.getenv("CRON_SECRET", ""))
+
+
+def _verify_health_secret(
+    x_health_secret: str | None = Header(None, alias="X-Health-Secret"),
+    x_cron_secret: str | None = Header(None, alias="X-Cron-Secret"),
+) -> None:
+    if not HEALTH_CHECK_SECRET:
+        raise HTTPException(503, "Detailed health checks are not configured")
+    supplied = x_health_secret or x_cron_secret or ""
+    if not hmac.compare_digest(supplied, HEALTH_CHECK_SECRET):
+        raise HTTPException(403, "Invalid health check secret")
 
 
 async def _check_database() -> dict:
@@ -222,7 +236,7 @@ async def _check_oauth_config() -> dict:
 
 
 @router.post("/health")
-async def health_check():
+async def health_check(_: None = Depends(_verify_health_secret)):
     """Comprehensive health check verifying all integrations.
 
     Returns status for each subsystem: database, firebase, calendar,

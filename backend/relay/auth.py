@@ -51,7 +51,7 @@ def verify_token(token: str) -> dict:
         try:
             decoded = _decode_jwt_payload(token)
             uid = decoded.get("user_id") or decoded.get("sub", "")
-            logger.info("DEV_MODE: accepted token for uid=%s", uid)
+            logger.info("DEV_MODE: accepted unsigned token")
             return {"uid": uid, "email": decoded.get("email", "")}
         except Exception as e:
             raise ValueError(f"Invalid token format: {e}")

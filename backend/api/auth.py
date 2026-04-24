@@ -18,12 +18,31 @@ from functools import wraps
 
 from fastapi import HTTPException, Request, Depends
 
+from config import is_production_like_environment
+
 logger = logging.getLogger(__name__)
 
 # WARNING: DEV_MODE skips token signature verification. Tokens are decoded but
 # NOT verified. This MUST be disabled (unset) in production — any forged JWT
 # with a valid structure would be accepted.
 DEV_MODE = os.getenv("DEV_MODE", "").lower() in ("1", "true", "yes")
+
+
+def dev_mode_is_forbidden(
+    dev_mode: bool,
+    app_env: str | None = None,
+    cloud_run_service: str | None = None,
+    gae_service: str | None = None,
+) -> bool:
+    return dev_mode and is_production_like_environment(
+        app_env=app_env,
+        cloud_run_service=cloud_run_service,
+        gae_service=gae_service,
+    )
+
+
+if dev_mode_is_forbidden(DEV_MODE):
+    raise RuntimeError("DEV_MODE cannot be enabled in production-like environments.")
 
 if DEV_MODE:
     logger.warning(
@@ -71,7 +90,7 @@ async def get_current_user(request: Request) -> dict:
     if DEV_MODE:
         try:
             decoded = _decode_jwt_payload(token)
-            logger.info("DEV_MODE: accepted token for uid=%s", decoded.get("user_id"))
+            logger.info("DEV_MODE: accepted unsigned token")
             return {"uid": decoded.get("user_id", ""), "email": decoded.get("email", ""), **decoded}
         except Exception:
             raise HTTPException(status_code=401, detail="Invalid token format")

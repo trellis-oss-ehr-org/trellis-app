@@ -199,7 +199,7 @@ async def _auto_complete_stale_drafts(client_id: str) -> None:
         cutoff,
     )
     if result and result != "UPDATE 0":
-        logger.info("Auto-completed stale journal drafts for client %s: %s", client_id, result)
+        logger.info("Auto-completed stale journal drafts: %s", result)
         asyncio.create_task(trigger_compaction(client_id))
 
 

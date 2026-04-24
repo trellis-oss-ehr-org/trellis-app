@@ -1757,7 +1757,7 @@ async def update_superbill(
             superbill_id,
         )
     except Exception as e:
-        logger.error("Failed to regenerate superbill PDF after edit: %s", e)
+        logger.error("Failed to regenerate superbill PDF after edit: %s", type(e).__name__)
         # Non-fatal — the data update still succeeded
 
     await log_audit_event(
@@ -1898,7 +1898,7 @@ async def email_superbill(
                 clinician_uid=user["uid"],
             )
         except Exception as e:
-            logger.error("Failed to send superbill email: %s", e)
+            logger.error("Failed to send superbill email: %s", type(e).__name__)
             raise HTTPException(502, f"Failed to send email: {type(e).__name__}")
 
     await log_audit_event(
@@ -1915,7 +1915,7 @@ async def email_superbill(
     )
 
     # PHI-safe: do not log recipient email address
-    logger.info("Superbill %s emailed successfully", superbill_id)
+    logger.info("Superbill emailed successfully")
 
     return {"status": "sent", "recipient": recipient, "superbill_id": superbill_id}
 
@@ -2025,8 +2025,7 @@ async def generate_statement(
     )
 
     logger.info(
-        "Statement generated for client %s (%d superbills)",
-        client_id[:8],
+        "Statement generated (%d superbills)",
         len(superbills),
     )
 
@@ -2168,7 +2167,7 @@ async def email_statement(
                 clinician_uid=user["uid"],
             )
         except Exception as e:
-            logger.error("Failed to send statement email: %s", e)
+            logger.error("Failed to send statement email: %s", type(e).__name__)
             raise HTTPException(502, f"Failed to send email: {type(e).__name__}")
 
     await log_audit_event(
@@ -2188,7 +2187,7 @@ async def email_statement(
         },
     )
 
-    logger.info("Statement emailed for client %s", client_id[:8])
+    logger.info("Statement emailed")
 
     return {
         "status": "sent",

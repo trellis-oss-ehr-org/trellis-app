@@ -285,14 +285,14 @@ async def check_and_compact(client_id: str) -> bool:
 
     if total_tokens < COMPACTION_THRESHOLD:
         logger.debug(
-            "Client %s: %d unsummarized tokens (threshold %d) — skipping compaction",
-            client_id, total_tokens, COMPACTION_THRESHOLD,
+            "%d unsummarized tokens (threshold %d) — skipping compaction",
+            total_tokens, COMPACTION_THRESHOLD,
         )
         return False
 
     logger.info(
-        "Client %s: %d unsummarized tokens across %d encounters — compacting",
-        client_id, total_tokens, len(unsummarized),
+        "%d unsummarized tokens across %d encounters — compacting",
+        total_tokens, len(unsummarized),
     )
 
     # Split: keep recent encounters hot, compress the rest
@@ -331,8 +331,8 @@ async def check_and_compact(client_id: str) -> bool:
     await mark_encounters_summarized(encounter_ids, new_version)
 
     logger.info(
-        "Client %s: compacted %d encounters into portrait v%d (%d tokens)",
-        client_id, len(to_compress), new_version, estimate_tokens(new_summary),
+        "Compacted %d encounters into portrait v%d (%d tokens)",
+        len(to_compress), new_version, estimate_tokens(new_summary),
     )
     return True
 
@@ -342,7 +342,7 @@ async def trigger_compaction(client_id: str) -> None:
     try:
         await check_and_compact(client_id)
     except Exception as e:
-        logger.error("Compaction trigger failed for client %s: %s: %s", client_id, type(e).__name__, e)
+        logger.error("Compaction trigger failed: %s", type(e).__name__)
 
 
 # ---------------------------------------------------------------------------

@@ -661,7 +661,7 @@ async def client_cancel_appointment(
         try:
             await delete_calendar_event(appt["calendar_event_id"], clinician_email=appt.get("clinician_email", ""), clinician_uid=appt.get("clinician_id"))
         except Exception as e:
-            logger.error("Failed to delete calendar event on client cancel: %s", e)
+            logger.error("Failed to delete calendar event on client cancel: %s", type(e).__name__)
 
     if appt.get("reconfirmation_response"):
         # Already responded to reconfirmation, just cancel the appointment
@@ -896,7 +896,7 @@ async def send_reconfirmation(
             clinician_uid=next_appt.get("clinician_id"),
         )
     except Exception as e:
-        logger.error("Failed to send reconfirmation email: %s", e)
+        logger.error("Failed to send reconfirmation email: %s", type(e).__name__)
         raise HTTPException(500, "Failed to send reconfirmation email")
 
     await log_audit_event(
@@ -1126,8 +1126,7 @@ async def cron_check_reconfirmations(
         )
 
         logger.info(
-            "Released appointment %s (client=%s) — reconfirmation expired",
-            appt["id"], appt["client_id"],
+            "Released appointment after reconfirmation expired",
         )
 
     return {"released_count": released_count}
@@ -1298,8 +1297,7 @@ async def cron_check_no_shows(
         )
 
         logger.info(
-            "Marked appointment %s as no-show (client=%s, was scheduled for %s)",
-            appt["id"], appt["client_id"], appt["scheduled_at"],
+            "Marked appointment as no-show",
         )
 
     return {"no_show_count": no_show_count}

@@ -195,7 +195,7 @@ async def invite_client(
             clinician_uid=user["uid"],
         )
     except Exception as e:
-        logger.error("Failed to send client invitation email to %s: %s", body.email, e)
+        logger.error("Failed to send client invitation email: %s", type(e).__name__)
 
     await log_audit_event(
         user_id=user["uid"],
@@ -796,10 +796,7 @@ async def initiate_discharge(
             appointments=all_appts,
         )
     except Exception as e:
-        logger.error(
-            "Discharge summary generation failed for client %s: %s",
-            client_id, e,
-        )
+        logger.error("Discharge summary generation failed: %s", type(e).__name__)
         # Create a placeholder if AI generation fails
         summary_result = {
             "format": "discharge",
@@ -880,9 +877,8 @@ async def initiate_discharge(
     )
 
     logger.info(
-        "Client %s discharged: cancelled %d appointments, ended %d series, "
-        "discharge note %s created",
-        client_id, cancelled_count, len(recurrence_ids), note_id,
+        "Client discharged: cancelled %d appointments, ended %d series",
+        cancelled_count, len(recurrence_ids),
     )
 
     return {

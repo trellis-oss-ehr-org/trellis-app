@@ -7,6 +7,7 @@ load_dotenv()
 
 PROJECT_ID = os.getenv("GCP_PROJECT_ID", "your-gcp-project")
 REGION = os.getenv("GCP_REGION", "us-central1")
+APP_ENV = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).strip().lower()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-live-2.5-flash-native-audio")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 
@@ -15,3 +16,13 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080")
 
 # Firebase auth — DEV_MODE bypasses JWT verification (same as API service)
 DEV_MODE = os.getenv("DEV_MODE", "").lower() in ("1", "true", "yes")
+
+
+def is_production_like_environment() -> bool:
+    return APP_ENV in {"production", "prod", "staging"} or bool(
+        os.getenv("K_SERVICE") or os.getenv("GAE_SERVICE")
+    )
+
+
+if DEV_MODE and is_production_like_environment():
+    raise RuntimeError("DEV_MODE cannot be enabled in production-like environments.")

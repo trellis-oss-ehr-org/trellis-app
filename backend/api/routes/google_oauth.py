@@ -154,7 +154,7 @@ async def google_callback(
         )
 
     if token_response.status_code != 200:
-        logger.error("Token exchange failed: %s", token_response.text)
+        logger.error("Token exchange failed: status=%s", token_response.status_code)
         raise HTTPException(400, "Failed to exchange authorization code")
 
     token_data = token_response.json()

@@ -253,7 +253,7 @@ async def generate_plan(
             assessment_date=assessment.get("encounter_created_at", ""),
         )
     except Exception as e:
-        logger.error("Treatment plan generation failed for %s: %s", body.client_id, e)
+        logger.error("Treatment plan generation failed: %s", type(e).__name__)
         raise HTTPException(502, f"Treatment plan generation failed: {type(e).__name__}")
 
     # Create the treatment plan record
@@ -282,7 +282,7 @@ async def generate_plan(
         },
     )
 
-    logger.info("Treatment plan generated: %s for client %s", plan_id, body.client_id)
+    logger.info("Treatment plan generated")
 
     plan = await get_treatment_plan(plan_id)
     return {

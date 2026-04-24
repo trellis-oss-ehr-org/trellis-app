@@ -1,6 +1,7 @@
 """Tests for auth/register and auth/me endpoints."""
 import pytest
 from conftest import make_token, clinician_headers, client_headers
+from auth import dev_mode_is_forbidden
 
 
 async def test_register_clinician(client):
@@ -81,3 +82,9 @@ async def test_invalid_token_returns_401(client):
         "/api/auth/me", headers={"Authorization": "Bearer not.a.valid.jwt.token"}
     )
     assert resp.status_code == 401
+
+
+def test_dev_mode_is_forbidden_in_production_like_envs():
+    assert dev_mode_is_forbidden(True, app_env="production")
+    assert dev_mode_is_forbidden(True, cloud_run_service="trellis-api")
+    assert not dev_mode_is_forbidden(True, app_env="development")

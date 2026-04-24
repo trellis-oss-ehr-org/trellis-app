@@ -285,8 +285,8 @@ Please complete these documents before your appointment. If you have questions, 
 
     except Exception as e:
         logger.error(
-            "Failed to auto-generate consent package for client %s: %s",
-            client_id, e,
+            "Failed to auto-generate consent package: %s",
+            type(e).__name__,
         )
         return None
 

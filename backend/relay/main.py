@@ -98,9 +98,9 @@ async def websocket_session(ws: WebSocket):
         # ── Verify Firebase JWT ──
         try:
             verified_user = verify_token(token)
-            logger.info("JWT verified for uid=%s", verified_user["uid"])
+            logger.info("JWT verified")
         except ValueError as e:
-            logger.warning("JWT verification failed: %s", e)
+            logger.warning("JWT verification failed: %s", type(e).__name__)
             await ws.send_json({"type": "error", "message": "Invalid or expired token"})
             await ws.close(code=4003)
             return
@@ -121,10 +121,7 @@ async def websocket_session(ws: WebSocket):
 
         # Ensure the authenticated user matches the claimed clientId
         if verified_user["uid"] != client_id:
-            logger.warning(
-                "Client ID mismatch: token uid=%s, claimed clientId=%s",
-                verified_user["uid"], client_id,
-            )
+            logger.warning("Client ID mismatch during relay auth")
             await ws.send_json({"type": "error", "message": "clientId does not match authenticated user"})
             await ws.close(code=4003)
             return
@@ -138,7 +135,7 @@ async def websocket_session(ws: WebSocket):
             if client_record:
                 if client_record.get("primary_clinician_id"):
                     resolved_clinician_uid = client_record["primary_clinician_id"]
-                    logger.info("Client assigned to clinician: %s", resolved_clinician_uid)
+                    logger.info("Resolved assigned clinician for relay session")
                 # Pull insurance data if the client uploaded their card
                 if client_record.get("payer_name") or client_record.get("insurance_data"):
                     client_insurance = client_record.get("insurance_data") or {}
@@ -149,9 +146,9 @@ async def websocket_session(ws: WebSocket):
                         client_insurance["member_id"] = client_record["member_id"]
                     if client_record.get("group_number"):
                         client_insurance["group_number"] = client_record["group_number"]
-                    logger.info("Loaded client insurance: payer=%s", client_insurance.get("payer_name"))
+                    logger.info("Loaded client insurance metadata")
         except Exception as e:
-            logger.warning("Failed to look up client record: %s", e)
+            logger.warning("Failed to look up client record: %s", type(e).__name__)
 
         # ── Fetch practice profile (for the resolved clinician) ──
         practice_profile = await get_practice_profile(
@@ -163,12 +160,9 @@ async def websocket_session(ws: WebSocket):
             if not resolved_clinician_uid:
                 resolved_clinician_uid = practice_profile.get("clinician_uid")
             logger.info(
-                "Loaded practice profile: %s (clinician: %s, insurances: %d, rates: intake=%s, session=%s)",
-                practice_profile.get("practice_name"),
-                practice_profile.get("clinician_name"),
+                "Loaded practice profile metadata (insurances=%d, has_rates=%s)",
                 len(practice_profile.get("accepted_insurances", [])),
-                practice_profile.get("intake_rate"),
-                practice_profile.get("session_rate"),
+                bool(practice_profile.get("intake_rate") or practice_profile.get("session_rate")),
             )
         else:
             logger.warning("No practice profile found — insurance/scheduling features will be limited")
@@ -189,13 +183,13 @@ async def websocket_session(ws: WebSocket):
             encounter_type=enc_type,
             source="voice",
         )
-        logger.info("Created encounter %s for client %s", encounter_id, client_id)
+        logger.info("Created relay encounter")
 
         # ── Load prior context (compressed portrait + recent encounters) ──
         context = await get_client_context(client_id)
         logger.info(
-            "Loaded context for client %s (%d chars)",
-            client_id, len(context),
+            "Loaded relay context (%d chars)",
+            len(context),
         )
 
         # ── Send ready ──
@@ -243,7 +237,7 @@ async def websocket_session(ws: WebSocket):
         await ws.close(code=4001)
         return
     except Exception as e:
-        logger.error("Session error: %s: %s", type(e).__name__, e)
+        logger.error("Session error: %s", type(e).__name__)
     finally:
         duration = round(time.time() - start_time) if start_time else 0
 
@@ -256,8 +250,8 @@ async def websocket_session(ws: WebSocket):
                     status="complete",
                 )
                 logger.info(
-                    "Saved encounter %s: %d chars, %ds",
-                    encounter_id, len(full_transcript), duration,
+                    "Saved relay encounter: %d chars, %ds",
+                    len(full_transcript), duration,
                 )
 
                 # Fire-and-forget compaction check
@@ -266,18 +260,18 @@ async def websocket_session(ws: WebSocket):
                 # Alert BD of new warm lead (intake only)
                 if session_type == "intake":
                     await notify_bd_new_intake(
-                        client_name=client_id,  # best we have from voice
+                        client_name="",
                         source="voice",
                         transcript=full_transcript,
                         encounter_id=encounter_id,
                     )
             except Exception as e:
-                logger.error("Failed to save encounter: %s: %s", type(e).__name__, e)
+                logger.error("Failed to save encounter: %s", type(e).__name__)
 
             # ── Send confirmation emails if a booking was made ──
             booking = session_context.get("booking_result")
             if booking:
-                logger.info("Sending booking confirmation emails for appointment %s", booking.get("id"))
+                logger.info("Sending booking confirmation emails")
                 try:
                     await send_clinician_confirmation(
                         clinician_email=booking.get("clinician_email", ""),
@@ -293,7 +287,7 @@ async def websocket_session(ws: WebSocket):
                         clinician_uid=session_context.get("clinician_id"),
                     )
                 except Exception as e:
-                    logger.error("Failed to send clinician confirmation: %s: %s", type(e).__name__, e)
+                    logger.error("Failed to send clinician confirmation: %s", type(e).__name__)
 
                 try:
                     await send_client_confirmation(
@@ -307,7 +301,7 @@ async def websocket_session(ws: WebSocket):
                         clinician_uid=session_context.get("clinician_id"),
                     )
                 except Exception as e:
-                    logger.error("Failed to send client confirmation: %s: %s", type(e).__name__, e)
+                    logger.error("Failed to send client confirmation: %s", type(e).__name__)
 
             try:
                 await ws.send_json({

@@ -12,7 +12,7 @@ async def test_root_health_returns_ok(client):
 
 async def test_api_health_post(client):
     """POST /api/health runs comprehensive checks (DB should pass)."""
-    resp = await client.post("/api/health")
+    resp = await client.post("/api/health", headers={"X-Health-Secret": "dev-cron-secret"})
     assert resp.status_code == 200
     data = resp.json()
     assert "checks" in data
@@ -20,3 +20,8 @@ async def test_api_health_post(client):
     # Database should be ok since we use real DB
     assert data["checks"]["database"]["status"] == "ok"
     assert "elapsed_ms" in data
+
+
+async def test_api_health_post_rejects_missing_secret(client):
+    resp = await client.post("/api/health")
+    assert resp.status_code == 403

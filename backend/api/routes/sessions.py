@@ -590,7 +590,7 @@ async def process_single_appointment(
         )
 
         if not recordings:
-            logger.info("No recording found for appointment %s (event %s)", appt_id, calendar_event_id)
+            logger.info("No recording found for appointment")
             await update_appointment_recording(
                 appt_id,
                 recording_status="pending",
@@ -601,8 +601,8 @@ async def process_single_appointment(
         file_ids = [r["id"] for r in recordings]
         file_names = [r.get("name", "unknown") for r in recordings]
         logger.info(
-            "Found %d recording(s) for appointment %s: %s",
-            len(recordings), appt_id, file_names,
+            "Found %d recording(s) for appointment",
+            len(recordings),
         )
 
         # Store the first file ID for backwards compatibility
@@ -672,7 +672,7 @@ async def process_single_appointment(
             status="complete",
         )
 
-        logger.info("Created encounter %s for appointment %s", encounter_id, appt_id)
+        logger.info("Created encounter from appointment recording")
 
         # Fire-and-forget compaction check
         asyncio.create_task(trigger_compaction(appointment["client_id"]))
@@ -692,7 +692,7 @@ async def process_single_appointment(
             try:
                 await strip_conference_data(calendar_event_id, clinician_email=appointment.get("clinician_email", ""), clinician_uid=appointment.get("clinician_id"))
             except Exception as e:
-                logger.error("Failed to strip conference data for %s: %s", appt_id, e)
+                logger.error("Failed to strip conference data: %s", type(e).__name__)
 
         # Step 8: Optionally delete recordings from Drive
         recordings_deleted = 0
@@ -713,9 +713,9 @@ async def process_single_appointment(
                 duration_sec=transcription.get("duration_sec"),
             )
             if note_id:
-                logger.info("Auto-generated note %s for appointment %s", note_id, appt_id)
+                logger.info("Auto-generated note from appointment recording")
         except Exception as e:
-            logger.error("Auto note generation failed for appointment %s: %s", appt_id, e)
+            logger.error("Auto note generation failed: %s", type(e).__name__)
 
         return {
             "status": "completed",
@@ -797,7 +797,7 @@ async def cron_process_recordings(
         if config:
             delete_after = config.get("delete_after_transcription", True)
             if not config.get("auto_process", True):
-                logger.info("Auto-processing disabled for clinician %s, skipping", appt["clinician_id"])
+                logger.info("Auto-processing disabled for clinician")
                 continue
 
         result = await process_single_appointment(appt, delete_after=delete_after)
@@ -919,7 +919,7 @@ async def _trigger_reconfirmation(appointment: dict, request: Request) -> None:
             appointment["id"], next_appt["id"],
         )
     except Exception as e:
-        logger.error("Failed to send reconfirmation email: %s", e)
+        logger.error("Failed to send reconfirmation email: %s", type(e).__name__)
 
     await log_audit_event(
         user_id=None,

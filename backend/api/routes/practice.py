@@ -698,7 +698,7 @@ async def invite_team_member(
             clinician_uid=user["uid"],
         )
     except Exception as e:
-        logger.error("Failed to send invitation email to %s: %s", body.email, e)
+        logger.error("Failed to send invitation email: %s", type(e).__name__)
 
     await log_audit_event(
         user_id=user["uid"],
