@@ -587,8 +587,6 @@ curl -s "https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accoun
 - **`document_packages` / `documents`** — onboarding paperwork with e-signature. SHA-256 content hashing. Auto-generated on client registration.
 - **`audit_events`** — append-only HIPAA audit log (no UPDATE/DELETE).
 - **`clinician_availability` / `appointments`** — scheduling with Calendar event IDs, Meet links, recurrence.
-- **`recurring_groups` / group_enrollments / group_sessions / group_attendance`** — group therapy.
-
 ### Voice Relay
 - Supports two session types: `intake` (clinical intake with scheduling tools) and `journal` (reflective companion for between-session journaling).
 - Audio is pass-through (browser ↔ Gemini), not recorded or stored.

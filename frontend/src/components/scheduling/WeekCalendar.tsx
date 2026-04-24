@@ -1,12 +1,11 @@
 import { useState, useMemo } from "react";
-import type { Appointment, GroupSession } from "../../types";
+import type { Appointment } from "../../types";
 
 const HOURS = Array.from({ length: 14 }, (_, i) => i + 7); // 7AM - 8PM
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface WeekCalendarProps {
   appointments: Appointment[];
-  groupSessions: GroupSession[];
   onWeekChange?: (start: string, end: string) => void;
 }
 
@@ -25,7 +24,6 @@ function getWeekEnd(start: Date): Date {
 
 export function WeekCalendar({
   appointments,
-  groupSessions,
   onWeekChange,
 }: WeekCalendarProps) {
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
@@ -49,7 +47,7 @@ export function WeekCalendar({
 
   // Map events to day/hour
   const eventsByDay = useMemo(() => {
-    const map: Record<number, { type: "appt" | "group"; label: string; hour: number; minutes: number; duration: number; meetLink?: string | null }[]> = {};
+    const map: Record<number, { label: string; hour: number; minutes: number; duration: number; meetLink?: string | null }[]> = {};
     for (let i = 0; i < 7; i++) map[i] = [];
 
     for (const a of appointments) {
@@ -58,7 +56,6 @@ export function WeekCalendar({
       const dayStart = weekDays[dayIdx];
       if (dayStart && dt.toDateString() === dayStart.toDateString() && map[dayIdx]) {
         map[dayIdx].push({
-          type: "appt",
           label: `${a.type === "assessment" ? "Assess" : "Indiv"}: ${a.client_name}`,
           hour: dt.getHours(),
           minutes: dt.getMinutes(),
@@ -68,24 +65,8 @@ export function WeekCalendar({
       }
     }
 
-    for (const s of (groupSessions || [])) {
-      const dt = new Date(s.scheduled_at);
-      const dayIdx = dt.getDay();
-      const dayStart = weekDays[dayIdx];
-      if (dayStart && dt.toDateString() === dayStart.toDateString() && map[dayIdx]) {
-        map[dayIdx].push({
-          type: "group",
-          label: s.group_title || "Group Session",
-          hour: dt.getHours(),
-          minutes: dt.getMinutes(),
-          duration: s.duration_minutes,
-          meetLink: s.meet_link,
-        });
-      }
-    }
-
     return map;
-  }, [appointments, groupSessions, weekDays]);
+  }, [appointments, weekDays]);
 
   const today = new Date();
 
@@ -168,11 +149,7 @@ export function WeekCalendar({
                       return (
                         <div
                           key={j}
-                          className={`absolute left-0.5 right-0.5 rounded px-1.5 py-0.5 text-[11px] leading-tight overflow-hidden z-10 ${
-                            ev.type === "appt"
-                              ? "bg-teal-100 text-teal-800 border border-teal-200"
-                              : "bg-sage-100 text-sage-800 border border-sage-200"
-                          }`}
+                          className="absolute left-0.5 right-0.5 rounded px-1.5 py-0.5 text-[11px] leading-tight overflow-hidden z-10 bg-teal-100 text-teal-800 border border-teal-200"
                           style={{
                             top: `${topOffset}px`,
                             minHeight: `${Math.max(height, 20)}px`,

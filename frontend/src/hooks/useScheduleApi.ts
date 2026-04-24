@@ -5,7 +5,6 @@ import type {
   AvailabilityWindow,
   TimeSlot,
   Appointment,
-  GroupSession,
 } from "../types";
 
 async function api<T>(
@@ -136,23 +135,6 @@ export function useScheduleApi() {
     [getIdToken],
   );
 
-  const getSchedule = useCallback(
-    async (start: string, end: string) => {
-      const token = await getIdToken();
-      const params = new URLSearchParams({ start, end });
-      const data = await api<{
-        appointments: Appointment[];
-        group_sessions?: GroupSession[];
-      }>(`/api/schedule?${params}`, token);
-      // Backend currently returns only { appointments }; default group_sessions
-      return {
-        appointments: data.appointments,
-        group_sessions: data.group_sessions ?? [],
-      };
-    },
-    [getIdToken],
-  );
-
   return {
     getAvailability,
     setAvailability,
@@ -161,6 +143,5 @@ export function useScheduleApi() {
     getAppointments,
     updateAppointment,
     endSeries,
-    getSchedule,
   };
 }

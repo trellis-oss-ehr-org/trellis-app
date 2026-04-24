@@ -92,50 +92,6 @@ export interface Appointment {
   created_at: string;
 }
 
-export interface RecurringGroup {
-  id: string;
-  title: string;
-  clinician_id: string;
-  clinician_email: string;
-  day_of_week: number;
-  start_time: string;
-  end_time: string;
-  duration_minutes: number;
-  max_capacity: number;
-  enrolled_count: number;
-  created_by: string;
-  created_at: string;
-}
-
-export interface GroupEnrollment {
-  id: string;
-  client_id: string;
-  client_email: string;
-  client_name: string;
-  enrolled_at: string;
-}
-
-export interface GroupSession {
-  id: string;
-  group_id: string;
-  scheduled_at: string;
-  duration_minutes: number;
-  status: "scheduled" | "completed" | "cancelled";
-  meet_link: string | null;
-  calendar_event_id: string | null;
-  group_title?: string;
-  attendance: AttendanceRecord[];
-}
-
-export interface AttendanceRecord {
-  id?: string;
-  client_id: string;
-  client_name?: string;
-  client_email?: string;
-  status: "expected" | "present" | "absent" | "late" | "excused";
-  notes: string | null;
-}
-
 /* Group practice types */
 
 export type PracticeType = "solo" | "group";

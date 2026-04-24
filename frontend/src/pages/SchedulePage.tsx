@@ -7,7 +7,7 @@ import { AvailabilityEditor } from "../components/scheduling/AvailabilityEditor"
 import { BookingFlow } from "../components/scheduling/BookingFlow";
 import { AppointmentCard } from "../components/scheduling/AppointmentCard";
 import { LoadingSpinner } from "../components/LoadingSpinner";
-import type { Appointment, GroupSession, AvailabilityWindow, Clinician } from "../types";
+import type { Appointment, AvailabilityWindow, Clinician } from "../types";
 
 const TABS = [
   { key: "schedule", label: "Schedule" },
@@ -35,7 +35,6 @@ export default function SchedulePage() {
 
   const [tab, setTab] = useState<TabKey>("schedule");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [groupSessions, setGroupSessions] = useState<GroupSession[]>([]);
   const [availabilityWindows, setAvailabilityWindows] = useState<AvailabilityWindow[]>([]);
   const [clinicians, setClinicians] = useState<Clinician[]>([]);
   const [selectedClinicianId, setSelectedClinicianId] = useState<string | null>(null);
@@ -51,9 +50,8 @@ export default function SchedulePage() {
         if (isGroup && isOwner && selectedClinicianId) {
           url += `&clinician_id=${encodeURIComponent(selectedClinicianId)}`;
         }
-        const data = await genApi.get<{ appointments: Appointment[]; group_sessions?: GroupSession[] }>(url);
+        const data = await genApi.get<{ appointments: Appointment[] }>(url);
         setAppointments(data.appointments || []);
-        setGroupSessions(data.group_sessions || []);
       } catch (err) {
         console.error("Failed to load schedule:", err);
       }
@@ -142,7 +140,6 @@ export default function SchedulePage() {
         <div className="space-y-6">
           <WeekCalendar
             appointments={appointments}
-            groupSessions={groupSessions}
             onWeekChange={handleWeekChange}
           />
 
