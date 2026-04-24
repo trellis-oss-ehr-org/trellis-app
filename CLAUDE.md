@@ -572,7 +572,7 @@ curl -s "https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accoun
 - Backend services are independent Python apps (not a shared virtualenv)
 - Each service has its own `requirements.txt` and `Dockerfile`
 - Frontend proxies `/api` to backend API and `/ws` to relay via Vite config
-- Shared Python code in `backend/shared/` (db operations, models, integrations)
+- Shared Python code in `backend/shared/` (db operations, integrations, utilities)
 - Database migrations in `db/migrations/` as numbered SQL files
 - Env vars loaded from `.env` files per service (frontend, api, relay)
 - `DEV_MODE=1` bypasses JWT verification — **never set in production**

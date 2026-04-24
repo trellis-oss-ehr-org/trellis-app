@@ -77,7 +77,7 @@ trellis/
 ├── backend/
 │   ├── api/               # FastAPI REST API (port 8080)
 │   ├── relay/             # Gemini Live voice relay (port 8081)
-│   └── shared/            # Shared: db, models, integrations
+│   └── shared/            # Shared: db, integrations, utilities
 └── db/migrations/         # SQL migrations
 ```
 
