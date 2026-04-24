@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
+import { useReauth } from "../hooks/useReauth";
 import { SectionEditor } from "../components/notes/SectionEditor";
 
 // ---------------------------------------------------------------------------
@@ -1129,6 +1130,7 @@ function TreatmentPlanSigningModal({
   onCancel: () => void;
 }) {
   const api = useApi();
+  const { requireReauth } = useReauth();
   const [storedSignature, setStoredSignature] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
   const [error, setError] = useState("");
@@ -1166,8 +1168,13 @@ function TreatmentPlanSigningModal({
   }, [api]);
 
   const handleSign = async (signatureData: string) => {
-    setSigning(true);
     setError("");
+    const confirmed = await requireReauth();
+    if (!confirmed) {
+      return;
+    }
+
+    setSigning(true);
     try {
       const result = await api.post<{
         status: string;
