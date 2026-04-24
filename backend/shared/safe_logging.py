@@ -23,6 +23,7 @@ Safe to log:
   - Configuration values
   - Service operational state
 """
+import copy
 import logging
 import re
 
@@ -39,6 +40,23 @@ def redact_phi(message: str) -> str:
         '[REDACTED_EMAIL]',
         message,
     )
+    # Redact common US phone number formats
+    message = re.sub(
+        r'(?<!\w)(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\w)',
+        '[REDACTED_PHONE]',
+        message,
+    )
+    # Redact bearer tokens and common secret-bearing key/value pairs
+    message = re.sub(
+        r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+',
+        '[REDACTED_BEARER_TOKEN]',
+        message,
+    )
+    message = re.sub(
+        r'(?i)\b(token|access_token|refresh_token|id_token|api_key|secret|password)=([^\s&]+)',
+        r'\1=[REDACTED_SECRET]',
+        message,
+    )
     return message
 
 
@@ -50,10 +68,11 @@ class PHISafeFormatter(logging.Formatter):
     """
 
     def format(self, record: logging.LogRecord) -> str:
-        # Redact the message before formatting
-        if isinstance(record.msg, str):
-            record.msg = redact_phi(record.msg)
-        return super().format(record)
+        safe_record = copy.copy(record)
+        safe_record.msg = redact_phi(record.getMessage())
+        safe_record.args = ()
+        safe_record.exc_text = None
+        return redact_phi(super().format(safe_record))
 
 
 def configure_safe_logging(level: int = logging.INFO) -> None:
