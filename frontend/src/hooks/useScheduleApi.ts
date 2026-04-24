@@ -5,8 +5,6 @@ import type {
   AvailabilityWindow,
   TimeSlot,
   Appointment,
-  RecurringGroup,
-  GroupEnrollment,
   GroupSession,
 } from "../types";
 
@@ -138,115 +136,6 @@ export function useScheduleApi() {
     [getIdToken],
   );
 
-  const createGroup = useCallback(
-    async (body: {
-      title: string;
-      clinician_id: string;
-      clinician_email: string;
-      day_of_week: number;
-      start_time: string;
-      end_time: string;
-      duration_minutes: number;
-      max_capacity?: number;
-    }) => {
-      const token = await getIdToken();
-      return api<{ group_id: string }>("/api/groups", token, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-    },
-    [getIdToken],
-  );
-
-  const getGroups = useCallback(async () => {
-    const token = await getIdToken();
-    const data = await api<{ groups: RecurringGroup[] }>("/api/groups", token);
-    return data.groups;
-  }, [getIdToken]);
-
-  const getGroupEnrollments = useCallback(
-    async (groupId: string) => {
-      const token = await getIdToken();
-      const data = await api<{ enrollments: GroupEnrollment[] }>(
-        `/api/groups/${groupId}/enrollments`,
-        token,
-      );
-      return data.enrollments;
-    },
-    [getIdToken],
-  );
-
-  const enrollClient = useCallback(
-    async (
-      groupId: string,
-      body: { client_id: string; client_email: string; client_name: string },
-    ) => {
-      const token = await getIdToken();
-      return api<{ enrollment_id: string }>(
-        `/api/groups/${groupId}/enroll`,
-        token,
-        { method: "POST", body: JSON.stringify(body) },
-      );
-    },
-    [getIdToken],
-  );
-
-  const dischargeClient = useCallback(
-    async (groupId: string, clientId: string) => {
-      const token = await getIdToken();
-      return api(
-        `/api/groups/${groupId}/discharge/${clientId}`,
-        token,
-        { method: "POST" },
-      );
-    },
-    [getIdToken],
-  );
-
-  const generateSessions = useCallback(
-    async (groupId: string, weeks = 4) => {
-      const token = await getIdToken();
-      return api<{
-        sessions: { id: string; scheduled_at: string; meet_link: string | null }[];
-      }>(`/api/groups/${groupId}/sessions/generate`, token, {
-        method: "POST",
-        body: JSON.stringify({ weeks }),
-      });
-    },
-    [getIdToken],
-  );
-
-  const getGroupSessions = useCallback(
-    async (groupId: string, start?: string, end?: string) => {
-      const token = await getIdToken();
-      const params = new URLSearchParams();
-      if (start) params.set("start", start);
-      if (end) params.set("end", end);
-      const qs = params.toString();
-      const data = await api<{ sessions: GroupSession[] }>(
-        `/api/groups/${groupId}/sessions${qs ? `?${qs}` : ""}`,
-        token,
-      );
-      return data.sessions;
-    },
-    [getIdToken],
-  );
-
-  const updateAttendance = useCallback(
-    async (
-      sessionId: string,
-      updates: { client_id: string; status: string; notes?: string }[],
-    ) => {
-      const token = await getIdToken();
-      return api(
-        `/api/groups/sessions/${sessionId}/attendance`,
-        token,
-        { method: "PATCH", body: JSON.stringify({ updates }) },
-      );
-    },
-    [getIdToken],
-  );
-
   const getSchedule = useCallback(
     async (start: string, end: string) => {
       const token = await getIdToken();
@@ -272,14 +161,6 @@ export function useScheduleApi() {
     getAppointments,
     updateAppointment,
     endSeries,
-    createGroup,
-    getGroups,
-    getGroupEnrollments,
-    enrollClient,
-    dischargeClient,
-    generateSessions,
-    getGroupSessions,
-    updateAttendance,
     getSchedule,
   };
 }
