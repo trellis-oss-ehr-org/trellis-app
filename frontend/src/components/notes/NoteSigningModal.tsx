@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from "react";
 import { useApi } from "../../hooks/useApi";
+import { useReauth } from "../../hooks/useReauth";
 import { SignatureCanvas } from "../signing/SignatureCanvas";
 import { SignatureConfirm } from "../signing/SignatureConfirm";
 
@@ -27,6 +28,7 @@ export function NoteSigningModal({
   onCancel,
 }: NoteSigningModalProps) {
   const api = useApi();
+  const { requireReauth } = useReauth();
   const [storedSignature, setStoredSignature] = useState<string | null>(null);
   const [useStored, setUseStored] = useState(true);
   const [signing, setSigning] = useState(false);
@@ -51,8 +53,11 @@ export function NoteSigningModal({
   }, [api]);
 
   const handleSign = async (signatureData: string) => {
-    setSigning(true);
     setError("");
+    const confirmed = await requireReauth();
+    if (!confirmed) return;
+
+    setSigning(true);
     try {
       const result = await api.post<{
         status: string;
