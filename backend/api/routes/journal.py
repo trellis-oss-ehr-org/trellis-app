@@ -20,6 +20,7 @@ Endpoints:
   - GET  /api/journal/{id}         — get a single journal encounter (full thread)
   - POST /api/journal/{id}/chat    — add a message and get AI feedback
   - POST /api/journal/{id}/complete — mark encounter complete (called by frontend on navigate away)
+  - DELETE /api/journal/{id}       — redact raw journal content, preserving audit metadata
   - POST /api/journal/transcribe   — dictation via Vertex STT
 """
 import asyncio
@@ -59,6 +60,7 @@ GCP_REGION = os.getenv("GCP_REGION", "us-central1")
 
 THREAD_TOKEN_LIMIT = 80_000
 STALE_DRAFT_MINUTES = 30
+JOURNAL_DELETED_KEY = "deleted_at"
 
 
 def _get_gemini_client() -> genai.Client:
@@ -166,6 +168,24 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _is_deleted_journal_data(data: dict | None) -> bool:
+    return bool(data and data.get(JOURNAL_DELETED_KEY))
+
+
+def _redacted_journal_data(data: dict | None) -> dict:
+    """Keep non-content provenance while removing client-entered journal details."""
+    original = data or {}
+    redacted = {
+        "raw_content_removed": True,
+        "deleted_by": "client",
+        JOURNAL_DELETED_KEY: datetime.now(timezone.utc).isoformat(),
+    }
+    for key in ("started_as", "ai_feedback", "voice_encounter_id"):
+        if key in original:
+            redacted[key] = original[key]
+    return redacted
+
+
 async def _get_journal_encounter(encounter_id: str, client_uid: str) -> dict:
     """Fetch a journal encounter, verifying ownership."""
     pool = await get_pool()
@@ -174,7 +194,11 @@ async def _get_journal_encounter(encounter_id: str, client_uid: str) -> dict:
         SELECT id, client_id, type, source, transcript, data,
                status, created_at, updated_at
         FROM encounters
-        WHERE id = $1::uuid AND client_id = $2 AND type = 'portal'
+        WHERE id = $1::uuid
+          AND client_id = $2
+          AND type = 'portal'
+          AND source = 'chat'
+          AND (data IS NULL OR NOT (data ? 'deleted_at'))
         """,
         encounter_id,
         client_uid,
@@ -194,6 +218,7 @@ async def _auto_complete_stale_drafts(client_id: str) -> None:
         SET status = 'complete'
         WHERE client_id = $1 AND type = 'portal' AND source = 'chat'
           AND status = 'draft' AND updated_at < $2
+          AND (data IS NULL OR NOT (data ? 'deleted_at'))
         """,
         client_id,
         cutoff,
@@ -372,6 +397,7 @@ async def list_journal_entries(
         SELECT id, transcript, data, status, created_at, updated_at
         FROM encounters
         WHERE client_id = $1 AND type = 'portal' AND source = 'chat'
+          AND (data IS NULL OR NOT (data ? 'deleted_at'))
         ORDER BY created_at DESC
         LIMIT 100
         """,
@@ -505,15 +531,18 @@ async def delete_journal_entry(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-    """Delete a journal encounter. If already compacted into the client portrait,
-    the themes remain in the portrait — only the raw entry is removed."""
+    """Redact a journal encounter without deleting the encounter shell.
+
+    If already compacted into the client portrait, themes remain in the
+    portrait. Raw thread content and client-entered journal metadata are removed.
+    """
     enc = await _get_journal_encounter(encounter_id, user["uid"])
 
-    pool = await get_pool()
-    await pool.execute(
-        "DELETE FROM encounters WHERE id = $1::uuid AND client_id = $2 AND type = 'portal'",
-        encounter_id,
-        user["uid"],
+    await update_encounter(
+        encounter_id=encounter_id,
+        transcript="",
+        data=_redacted_journal_data(enc.get("data")),
+        status="complete",
     )
 
     await log_audit_event(
@@ -523,6 +552,10 @@ async def delete_journal_entry(
         resource_id=encounter_id,
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
+        metadata={
+            "raw_content_removed": True,
+            "previous_status": enc.get("status"),
+        },
     )
 
     return {"status": "deleted"}

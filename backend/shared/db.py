@@ -904,7 +904,12 @@ async def get_client_transcripts(client_id: str, limit: int = 20) -> list[dict]:
         """
         SELECT id, type, source, transcript, data, created_at
         FROM encounters
-        WHERE client_id = $1 AND transcript != ''
+        WHERE client_id = $1
+          AND transcript != ''
+          AND NOT (
+              type = 'portal' AND source = 'chat'
+              AND data IS NOT NULL AND (data ? 'deleted_at')
+          )
         ORDER BY created_at DESC
         LIMIT $2
         """,
@@ -958,7 +963,13 @@ async def get_unsummarized_encounters(client_id: str) -> list[dict]:
             """
             SELECT id, type, source, transcript, token_estimate, data, created_at
             FROM encounters
-            WHERE client_id = $1 AND summary_version IS NULL AND transcript != ''
+            WHERE client_id = $1
+              AND summary_version IS NULL
+              AND transcript != ''
+              AND NOT (
+                  type = 'portal' AND source = 'chat'
+                  AND data IS NOT NULL AND (data ? 'deleted_at')
+              )
             ORDER BY created_at ASC
             """,
             client_id,
@@ -969,7 +980,12 @@ async def get_unsummarized_encounters(client_id: str) -> list[dict]:
             """
             SELECT id, type, source, transcript, data, created_at
             FROM encounters
-            WHERE client_id = $1 AND transcript != ''
+            WHERE client_id = $1
+              AND transcript != ''
+              AND NOT (
+                  type = 'portal' AND source = 'chat'
+                  AND data IS NOT NULL AND (data ? 'deleted_at')
+              )
             ORDER BY created_at ASC
             LIMIT 20
             """,
@@ -2528,6 +2544,10 @@ async def get_client_encounters(client_id: str, limit: int = 50) -> list[dict]:
                data, duration_sec, status, created_at, updated_at
         FROM encounters
         WHERE client_id = $1
+          AND NOT (
+              type = 'portal' AND source = 'chat'
+              AND data IS NOT NULL AND (data ? 'deleted_at')
+          )
         ORDER BY created_at DESC
         LIMIT $2
         """,
@@ -2903,6 +2923,10 @@ async def get_client_full_encounters(client_id: str) -> list[dict]:
                data, duration_sec, status, created_at, updated_at
         FROM encounters
         WHERE client_id = $1
+          AND NOT (
+              type = 'portal' AND source = 'chat'
+              AND data IS NOT NULL AND (data ? 'deleted_at')
+          )
         ORDER BY created_at ASC
         """,
         client_id,

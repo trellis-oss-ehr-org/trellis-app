@@ -353,7 +353,7 @@ export default function ClientJournalPage() {
           <div className="bg-white rounded-2xl shadow-xl max-w-sm mx-4 p-6">
             <h3 className="text-lg font-display font-semibold text-warm-800 mb-2">Delete this entry?</h3>
             <p className="text-sm text-warm-500 mb-5">
-              This will permanently remove this journal entry. If its themes have already been absorbed into your profile, those will remain.
+              This removes the raw entry from your journal. If its themes have already been absorbed into your profile, those will remain.
             </p>
             <div className="flex gap-3">
               <button
@@ -685,7 +685,7 @@ function ThreadView({
           <div className="bg-white rounded-2xl shadow-xl max-w-sm mx-4 p-6">
             <h3 className="text-lg font-display font-semibold text-warm-800 mb-2">Delete this entry?</h3>
             <p className="text-sm text-warm-500 mb-5">
-              This will permanently remove this journal entry. If its themes have already been absorbed into your profile, those will remain.
+              This removes the raw entry from your journal. If its themes have already been absorbed into your profile, those will remain.
             </p>
             <div className="flex gap-3">
               <button
