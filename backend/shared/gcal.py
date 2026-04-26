@@ -440,17 +440,3 @@ async def get_all_recordings_for_event(
         len(matched), calendar_event_id, meet_code,
     )
     return matched
-
-
-async def get_meet_recording_for_event(
-    calendar_event_id: str,
-    meet_link: str | None = None,
-    search_minutes: int = 180,
-    clinician_email: str = "",
-    clinician_uid: str | None = None,
-) -> dict | None:
-    """Find a single recording matching a Calendar event (legacy helper)."""
-    recordings = await get_all_recordings_for_event(
-        calendar_event_id, meet_link, search_minutes, clinician_email, clinician_uid,
-    )
-    return recordings[0] if recordings else None

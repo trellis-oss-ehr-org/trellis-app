@@ -55,7 +55,6 @@ from db import (
 from compaction import trigger_compaction
 from note_generator import generate_note
 from gcal import (
-    get_meet_recording_for_event,
     get_all_recordings_for_event,
     download_recording,
     delete_drive_file,

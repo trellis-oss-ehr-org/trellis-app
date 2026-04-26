@@ -147,9 +147,6 @@ def mock_gcp_services():
     )
     gcal_delete = patch("gcal.delete_calendar_event", return_value=None)
     gcal_update = patch("gcal.update_calendar_event", return_value=None)
-    gcal_get_recording = patch(
-        "gcal.get_meet_recording_for_event", return_value=None
-    )
     gcal_download = patch(
         "gcal.download_recording", return_value=None
     )
@@ -295,7 +292,6 @@ def mock_gcp_services():
     gcal_delete_sched = patch("routes.scheduling.delete_calendar_event", return_value=None)
     gcal_update_sched = patch("routes.scheduling.update_calendar_event", return_value=None)
     gcal_delete_clients = patch("routes.clients.delete_calendar_event", return_value=None)
-    gcal_sess_get = patch("routes.sessions.get_meet_recording_for_event", return_value=None)
     gcal_sess_dl = patch("routes.sessions.download_recording", return_value=None)
     gcal_sess_del = patch("routes.sessions.delete_drive_file", return_value=True)
 
@@ -414,8 +410,7 @@ def mock_gcp_services():
     alerts_intake = patch("routes.intake.notify_bd_new_intake", return_value=None)
 
     all_patches = [
-        gcal_create, gcal_delete, gcal_update, gcal_get_recording,
-        gcal_download, gcal_delete_drive,
+        gcal_create, gcal_delete, gcal_update, gcal_download, gcal_delete_drive,
         mail_send, mail_send_attach,
         note_gen, note_regen, tp_gen, tp_update, discharge_gen,
         vision_extract,
@@ -424,7 +419,7 @@ def mock_gcp_services():
         assistant_client,
         # Import-use location patches
         gcal_create_sched, gcal_delete_sched, gcal_update_sched,
-        gcal_delete_clients, gcal_sess_get, gcal_sess_dl, gcal_sess_del,
+        gcal_delete_clients, gcal_sess_dl, gcal_sess_del,
         mail_send_sched, mail_send_docs,
         note_gen_routes, note_regen_routes, note_pdf_routes,
         tp_gen_notes, tp_gen_tp_routes, tp_update_routes, tp_pdf_routes,
