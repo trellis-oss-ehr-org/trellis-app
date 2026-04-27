@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@floating-ui/dom": "^1.7.5",
     "@tailwindcss/vite": "^4.2.0",
     "@tiptap/extension-placeholder": "^3.20.0",
     "@tiptap/extension-underline": "^3.20.0",
