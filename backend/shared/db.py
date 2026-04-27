@@ -5,8 +5,12 @@ Requires DATABASE_URL env var (postgresql://...).
 """
 import os
 import logging
+import hashlib
+import re
 
 import asyncpg
+
+from safe_logging import redact_phi
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +20,28 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://ehr:@127.0.0.1:5432/ehr",
 )
+
+
+def normalize_phone_number_for_texting(value: str) -> str:
+    stripped = value.strip()
+    digits = re.sub(r"\D", "", stripped)
+    if not digits:
+        return stripped
+    if stripped.startswith("+"):
+        return f"+{digits}"
+    if len(digits) == 10:
+        return f"+1{digits}"
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+    return digits
+
+
+def sha256_hex(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def phone_sha256_for_texting(value: str) -> str:
+    return sha256_hex(normalize_phone_number_for_texting(value))
 
 
 def _coerce_date(value):
@@ -1320,8 +1346,39 @@ async def log_audit_event(
         resource_id,
         ip_address,
         user_agent,
-        __to_json(metadata),
+        __to_json(_redact_audit_metadata(metadata)),
     )
+
+
+def _redact_audit_metadata(value):
+    """Best-effort redaction for audit metadata before persistent storage."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return redact_phi(value)
+    if isinstance(value, list):
+        return [_redact_audit_metadata(item) for item in value]
+    if isinstance(value, tuple):
+        return [_redact_audit_metadata(item) for item in value]
+    if isinstance(value, dict):
+        safe = {}
+        for key, item in value.items():
+            key_str = str(key)
+            if key_str.lower() in {
+                "password",
+                "secret",
+                "token",
+                "access_token",
+                "refresh_token",
+                "id_token",
+                "api_key",
+                "authorization",
+            }:
+                safe[key_str] = "[REDACTED_SECRET]"
+            else:
+                safe[key_str] = _redact_audit_metadata(item)
+        return safe
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -1466,7 +1523,8 @@ def _appointment_to_dict(r) -> dict:
     # Reconfirmation fields (added in migration 006)
     for field in ("reconfirmation_token", "reconfirmation_sent_at",
                   "reconfirmation_response", "reconfirmation_responded_at",
-                  "released_at", "cadence", "reminder_sent_at"):
+                  "released_at", "cadence", "reminder_sent_at",
+                  "text_reminder_sent_at"):
         try:
             val = r[field]
             if field == "reconfirmation_token":
@@ -1628,7 +1686,12 @@ _CLIENT_FIELDS = {
     "sex", "payer_id", "default_modality",
     "secondary_payer_name", "secondary_payer_id", "secondary_member_id",
     "secondary_group_number", "filing_deadline_days",
+    "sms_consent_status", "sms_consent_source", "sms_consent_at",
+    "sms_opted_out_at", "sms_consent_updated_by",
+    "sms_consent_text", "sms_consent_version",
 }
+
+SMS_CONSENT_STATUSES = {"unknown", "consented", "declined", "opted_out"}
 
 
 async def upsert_client(firebase_uid: str, email: str, **kwargs) -> str:
@@ -1657,7 +1720,13 @@ async def upsert_client(firebase_uid: str, email: str, **kwargs) -> str:
             placeholders.append(f"${i}::jsonb")
         elif col == "date_of_birth":
             placeholders.append(f"${i}::date")
-        elif col in ("intake_completed_at", "documents_completed_at", "discharged_at"):
+        elif col in (
+            "intake_completed_at",
+            "documents_completed_at",
+            "discharged_at",
+            "sms_consent_at",
+            "sms_opted_out_at",
+        ):
             placeholders.append(f"${i}::timestamptz")
         else:
             placeholders.append(f"${i}")
@@ -1669,7 +1738,13 @@ async def upsert_client(firebase_uid: str, email: str, **kwargs) -> str:
         elif key == "date_of_birth" and isinstance(val, str):
             from datetime import date as _date
             values.append(_date.fromisoformat(val))
-        elif key in ("intake_completed_at", "documents_completed_at", "discharged_at") and isinstance(val, str):
+        elif key in (
+            "intake_completed_at",
+            "documents_completed_at",
+            "discharged_at",
+            "sms_consent_at",
+            "sms_opted_out_at",
+        ) and isinstance(val, str):
             from datetime import datetime as _datetime
             values.append(_datetime.fromisoformat(val))
         else:
@@ -1745,6 +1820,7 @@ async def get_all_clients(clinician_uid: str | None = None, is_owner: bool = Tru
             "full_name": r["full_name"],
             "preferred_name": r["preferred_name"],
             "phone": r["phone"],
+            "sms_consent_status": r.get("sms_consent_status", "unknown"),
             "status": r["status"],
             "payer_name": r["payer_name"],
             "next_appointment": r["next_appointment"].isoformat() if r["next_appointment"] else None,
@@ -1779,7 +1855,13 @@ async def update_client(firebase_uid: str, **kwargs) -> None:
         elif key == "date_of_birth":
             sets.append(f"{key} = ${idx}::date")
             vals.append(val)
-        elif key in ("intake_completed_at", "documents_completed_at", "discharged_at"):
+        elif key in (
+            "intake_completed_at",
+            "documents_completed_at",
+            "discharged_at",
+            "sms_consent_at",
+            "sms_opted_out_at",
+        ):
             sets.append(f"{key} = ${idx}::timestamptz")
             vals.append(val)
         else:
@@ -1808,6 +1890,70 @@ async def update_client_insurance(
     if group_number is not None:
         kwargs["group_number"] = group_number
     await update_client(firebase_uid, **kwargs)
+
+
+async def update_client_texting_consent(
+    firebase_uid: str,
+    status: str,
+    source: str | None = None,
+    updated_by: str | None = None,
+    consent_text: str | None = None,
+    consent_version: str | None = None,
+) -> dict | None:
+    """Update the current SMS consent state for a client."""
+    if status not in SMS_CONSENT_STATUSES:
+        raise ValueError(f"Invalid SMS consent status: {status}")
+
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """
+        UPDATE clients
+        SET sms_consent_status = $1,
+            sms_consent_source = $2,
+            sms_consent_updated_by = $3,
+            sms_consent_text = CASE WHEN $1 = 'consented' THEN $4 ELSE sms_consent_text END,
+            sms_consent_version = CASE WHEN $1 = 'consented' THEN $5 ELSE sms_consent_version END,
+            sms_consent_at = CASE WHEN $1 = 'consented' THEN now() ELSE NULL END,
+            sms_opted_out_at = CASE WHEN $1 = 'opted_out' THEN now() ELSE NULL END
+        WHERE firebase_uid = $6
+        RETURNING *
+        """,
+        status,
+        source,
+        updated_by,
+        consent_text,
+        consent_version,
+        firebase_uid,
+    )
+    return _client_full_to_dict(row) if row else None
+
+
+async def opt_out_clients_by_phone_sha256(
+    phone_sha256: str,
+    source: str = "telnyx_stop",
+    updated_by: str = "hosted_texting_webhook",
+) -> list[dict]:
+    """Mark clients with the matching normalized phone hash as SMS opted out."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM clients WHERE NULLIF(BTRIM(phone), '') IS NOT NULL"
+    )
+    matched = [
+        r
+        for r in rows
+        if phone_sha256_for_texting(r["phone"]) == phone_sha256
+    ]
+    updated: list[dict] = []
+    for row in matched:
+        client = await update_client_texting_consent(
+            row["firebase_uid"],
+            status="opted_out",
+            source=source,
+            updated_by=updated_by,
+        )
+        if client:
+            updated.append(client)
+    return updated
 
 
 # ---------------------------------------------------------------------------
@@ -2130,6 +2276,44 @@ async def get_upcoming_appointments_for_reminders(hours_ahead: int = 24) -> list
     return [_appointment_to_dict(r) for r in rows]
 
 
+async def get_text_reminder_candidates(hours_ahead: int = 24) -> list[dict]:
+    """Find scheduled appointments whose clients consented to SMS reminders."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT a.*,
+               c.phone AS client_phone,
+               c.sms_consent_status,
+               c.sms_consent_at,
+               c.sms_opted_out_at
+        FROM appointments a
+        JOIN clients c ON c.firebase_uid = a.client_id
+        WHERE a.status = 'scheduled'
+          AND a.scheduled_at > now()
+          AND a.scheduled_at <= now() + $1 * interval '1 hour'
+          AND a.text_reminder_sent_at IS NULL
+          AND c.sms_consent_status = 'consented'
+          AND c.sms_opted_out_at IS NULL
+          AND NULLIF(BTRIM(c.phone), '') IS NOT NULL
+        ORDER BY a.scheduled_at
+        """,
+        hours_ahead,
+    )
+    result = []
+    for r in rows:
+        d = _appointment_to_dict(r)
+        d["client_phone"] = r["client_phone"]
+        d["sms_consent_status"] = r["sms_consent_status"]
+        d["sms_consent_at"] = (
+            r["sms_consent_at"].isoformat() if r["sms_consent_at"] else None
+        )
+        d["sms_opted_out_at"] = (
+            r["sms_opted_out_at"].isoformat() if r["sms_opted_out_at"] else None
+        )
+        result.append(d)
+    return result
+
+
 async def mark_reminder_sent(appointment_id: str) -> None:
     """Mark that a reminder email has been sent for an appointment."""
     pool = await get_pool()
@@ -2144,6 +2328,15 @@ async def mark_push_reminder_sent(appointment_id: str) -> None:
     pool = await get_pool()
     await pool.execute(
         "UPDATE appointments SET push_reminder_sent_at = now() WHERE id = $1::uuid",
+        appointment_id,
+    )
+
+
+async def mark_text_reminder_sent(appointment_id: str) -> None:
+    """Mark that a text message reminder has been sent for an appointment."""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE appointments SET text_reminder_sent_at = now() WHERE id = $1::uuid",
         appointment_id,
     )
 
@@ -2550,6 +2743,19 @@ def _client_full_to_dict(r) -> dict:
         "intake_completed_at": r["intake_completed_at"].isoformat() if r["intake_completed_at"] else None,
         "documents_completed_at": r["documents_completed_at"].isoformat() if r["documents_completed_at"] else None,
         "docs_warning_dismissed": r.get("docs_warning_dismissed", False),
+        "sms_consent_status": r.get("sms_consent_status", "unknown"),
+        "sms_consent_source": r.get("sms_consent_source"),
+        "sms_consent_text": r.get("sms_consent_text"),
+        "sms_consent_version": r.get("sms_consent_version"),
+        "sms_consent_at": (
+            r["sms_consent_at"].isoformat()
+            if r.get("sms_consent_at") else None
+        ),
+        "sms_opted_out_at": (
+            r["sms_opted_out_at"].isoformat()
+            if r.get("sms_opted_out_at") else None
+        ),
+        "sms_consent_updated_by": r.get("sms_consent_updated_by"),
         "discharged_at": r["discharged_at"].isoformat() if r["discharged_at"] else None,
         "created_at": r["created_at"].isoformat(),
         "updated_at": r["updated_at"].isoformat(),
@@ -3573,14 +3779,21 @@ async def get_active_practice_clinicians(practice_id: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def _texting_connection_to_dict(r) -> dict:
+    keys = r.keys()
     return {
         "install_id": str(r["install_id"]),
+        "onboarding_secret": r["onboarding_secret"] if "onboarding_secret" in keys else None,
         "account_id": str(r["account_id"]) if r["account_id"] else None,
         "service_url": r["service_url"],
         "credential_secret": r["credential_secret"],
         "credential_key_prefix": r["credential_key_prefix"],
         "status": r["status"],
         "baa_status": r["baa_status"],
+        "shared_number_attestation_status": (
+            r["shared_number_attestation_status"]
+            if "shared_number_attestation_status" in keys
+            else "not_accepted"
+        ),
         "subscription_status": r["subscription_status"],
         "telnyx_status": r["telnyx_status"],
         "last_error": r["last_error"],
@@ -3631,6 +3844,7 @@ async def update_texting_connection(**kwargs) -> dict:
     allowed = {
         "install_id", "account_id", "service_url", "credential_secret",
         "credential_key_prefix", "status", "baa_status",
+        "shared_number_attestation_status",
         "subscription_status", "telnyx_status", "last_error",
         "last_synced_at",
     }

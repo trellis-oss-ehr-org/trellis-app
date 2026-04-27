@@ -10,6 +10,8 @@ interface IntakeData {
   pronouns: string;
   sex: string;
   dateOfBirth: string;
+  phone: string;
+  smsReminderConsent: boolean;
   emergencyContactName: string;
   emergencyContactPhone: string;
   emergencyContactRelationship: string;
@@ -37,6 +39,8 @@ const empty: IntakeData = {
   pronouns: "",
   sex: "",
   dateOfBirth: "",
+  phone: "",
+  smsReminderConsent: false,
   emergencyContactName: "",
   emergencyContactPhone: "",
   emergencyContactRelationship: "",
@@ -81,6 +85,10 @@ function Field({
 const inputClass =
   "w-full px-4 py-2.5 rounded-xl border border-warm-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition-all text-warm-800 bg-white";
 
+const SMS_REMINDER_CONSENT_VERSION = "2026-04-27-shared-trellis-number-v1";
+const SMS_REMINDER_CONSENT_TEXT =
+  "I agree to receive appointment reminder text messages sent by Trellis LLC on behalf of my healthcare practice from a Trellis-managed texting number. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not required to receive care.";
+
 export function IntakeForm({ intakeMode: _intakeMode = "standard" }: { intakeMode?: "standard" | "iop" }) {
   const { getIdToken, cashOnly } = useAuth();
   const { getProfile } = useClientApi();
@@ -100,6 +108,7 @@ export function IntakeForm({ intakeMode: _intakeMode = "standard" }: { intakeMod
           preferredName: profile.preferred_name || prev.preferredName,
           pronouns: profile.pronouns || prev.pronouns,
           dateOfBirth: profile.date_of_birth || prev.dateOfBirth,
+          phone: profile.phone || prev.phone,
           emergencyContactName: profile.emergency_contact_name || prev.emergencyContactName,
           emergencyContactPhone: profile.emergency_contact_phone || prev.emergencyContactPhone,
           emergencyContactRelationship: profile.emergency_contact_relationship || prev.emergencyContactRelationship,
@@ -133,6 +142,10 @@ export function IntakeForm({ intakeMode: _intakeMode = "standard" }: { intakeMod
             pronouns: data.pronouns || null,
             sex: data.sex || null,
             dateOfBirth: data.dateOfBirth,
+            phone: data.phone || null,
+            smsReminderConsent: data.smsReminderConsent,
+            smsReminderConsentText: SMS_REMINDER_CONSENT_TEXT,
+            smsReminderConsentVersion: SMS_REMINDER_CONSENT_VERSION,
             emergencyContact: {
               name: data.emergencyContactName || null,
               phone: data.emergencyContactPhone || null,
@@ -258,6 +271,23 @@ export function IntakeForm({ intakeMode: _intakeMode = "standard" }: { intakeMod
               />
             </Field>
           </div>
+          <Field label="Phone Number">
+            <input
+              type="tel"
+              value={data.phone}
+              onChange={(e) => set("phone", e.target.value)}
+              className={inputClass}
+            />
+          </Field>
+          <label className="flex gap-3 rounded-xl border border-warm-200 bg-white p-4 text-sm text-warm-600">
+            <input
+              type="checkbox"
+              checked={data.smsReminderConsent}
+              onChange={(e) => set("smsReminderConsent", e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-warm-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span>{SMS_REMINDER_CONSENT_TEXT}</span>
+          </label>
         </div>
       </fieldset>
 

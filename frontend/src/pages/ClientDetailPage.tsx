@@ -19,6 +19,13 @@ interface ClientDetail {
   pronouns: string | null;
   date_of_birth: string | null;
   phone: string | null;
+  sms_consent_status: "unknown" | "consented" | "declined" | "opted_out";
+  sms_consent_source: string | null;
+  sms_consent_text: string | null;
+  sms_consent_version: string | null;
+  sms_consent_at: string | null;
+  sms_opted_out_at: string | null;
+  sms_consent_updated_by: string | null;
   address_line1: string | null;
   address_line2: string | null;
   address_city: string | null;
@@ -183,6 +190,17 @@ const STATUS_STYLES: Record<string, string> = {
   inactive: "bg-amber-50 text-amber-700",
 };
 
+const SMS_CONSENT_LABELS: Record<ClientDetail["sms_consent_status"], string> = {
+  unknown: "Unknown",
+  consented: "Consented",
+  declined: "Declined",
+  opted_out: "Opted out",
+};
+
+const SMS_REMINDER_CONSENT_VERSION = "2026-04-27-shared-trellis-number-v1";
+const SMS_REMINDER_CONSENT_TEXT =
+  "I agree to receive appointment reminder text messages sent by Trellis LLC on behalf of my healthcare practice from a Trellis-managed texting number. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not required to receive care.";
+
 const NOTE_STATUS_STYLES: Record<string, string> = {
   draft: "bg-amber-50 text-amber-700",
   review: "bg-blue-50 text-blue-700",
@@ -286,6 +304,7 @@ export default function ClientDetailPage() {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>("");
   const [savingField, setSavingField] = useState(false);
+  const [savingSmsConsent, setSavingSmsConsent] = useState(false);
 
   async function handleSaveField(fieldName: string) {
     if (!client || !clientId) return;
@@ -310,6 +329,27 @@ export default function ClientDetailPage() {
   function startEdit(fieldName: string, currentValue: string | number | null) {
     setEditingField(fieldName);
     setEditValue(String(currentValue ?? ""));
+  }
+
+  async function handleSaveSmsConsent(status: ClientDetail["sms_consent_status"]) {
+    if (!client || !clientId) return;
+    setSavingSmsConsent(true);
+    try {
+      const updated = await api.patch<ClientDetail>(
+        `/api/clients/${clientId}/texting-consent`,
+        {
+          status,
+          source: "clinician",
+          consent_text: SMS_REMINDER_CONSENT_TEXT,
+          consent_version: SMS_REMINDER_CONSENT_VERSION,
+        }
+      );
+      setClient(updated);
+    } catch (err) {
+      console.error("Failed to update text reminder consent:", err);
+    } finally {
+      setSavingSmsConsent(false);
+    }
   }
 
   // Discharge workflow state
@@ -847,6 +887,35 @@ export default function ClientDetailPage() {
             <div className="space-y-1 text-sm">
               <p className="text-warm-700">{client.email}</p>
               <p className="text-warm-600">{client.phone || "No phone"}</p>
+              <div className="pt-2 mt-2 border-t border-warm-50">
+                <label className="block text-xs font-semibold text-warm-400 uppercase tracking-wide mb-1">
+                  Text reminders
+                </label>
+                <select
+                  value={client.sms_consent_status || "unknown"}
+                  onChange={(e) =>
+                    handleSaveSmsConsent(e.target.value as ClientDetail["sms_consent_status"])
+                  }
+                  disabled={savingSmsConsent}
+                  className="w-full px-2 py-1 text-xs border border-warm-200 rounded-lg bg-white text-warm-700 disabled:opacity-60"
+                >
+                  {Object.entries(SMS_CONSENT_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                {(client.sms_consent_at || client.sms_opted_out_at) && (
+                  <p className="text-xs text-warm-400 mt-1">
+                    Updated {formatDateTime(client.sms_consent_at || client.sms_opted_out_at)}
+                  </p>
+                )}
+                {client.sms_consent_version && (
+                  <p className="text-xs text-warm-400 mt-1">
+                    Consent version {client.sms_consent_version}
+                  </p>
+                )}
+              </div>
               {client.date_of_birth && (
                 <p className="text-warm-500">DOB: {formatDate(client.date_of_birth)}</p>
               )}

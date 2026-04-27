@@ -34,6 +34,10 @@ class Demographics(BaseModel):
     pronouns: str | None = None
     sex: str | None = None
     dateOfBirth: str
+    phone: str | None = None
+    smsReminderConsent: bool | None = None
+    smsReminderConsentText: str | None = None
+    smsReminderConsentVersion: str | None = None
     emergencyContact: EmergencyContact = EmergencyContact()
 
 
@@ -69,6 +73,15 @@ class IntakePayload(BaseModel):
     defaultModality: str | None = None  # "telehealth" or "in_office"
 
 
+SMS_REMINDER_CONSENT_VERSION = "2026-04-27-shared-trellis-number-v1"
+SMS_REMINDER_CONSENT_TEXT = (
+    "I agree to receive appointment reminder text messages sent by Trellis LLC "
+    "on behalf of my healthcare practice from a Trellis-managed texting number. "
+    "Message and data rates may apply. Reply STOP to opt out or HELP for help. "
+    "Consent is not required to receive care."
+)
+
+
 def _payload_to_transcript(payload: IntakePayload) -> str:
     """Convert structured intake form data to a readable transcript string."""
     d = payload.demographics
@@ -81,6 +94,13 @@ def _payload_to_transcript(payload: IntakePayload) -> str:
         sex_labels = {"M": "Male", "F": "Female", "X": "Non-binary", "U": "Prefer not to say"}
         lines.append(f"Sex: {sex_labels.get(d.sex, d.sex)}")
     lines.append(f"Date of birth: {d.dateOfBirth}")
+    if d.phone:
+        lines.append("Phone number provided")
+    if d.smsReminderConsent is not None:
+        lines.append(
+            "SMS reminder consent: "
+            + ("yes" if d.smsReminderConsent else "no")
+        )
 
     ec = d.emergencyContact
     if ec.name:
@@ -154,6 +174,7 @@ async def submit_intake(
         pronouns=payload.demographics.pronouns,
         sex=payload.demographics.sex,
         date_of_birth=payload.demographics.dateOfBirth,
+        phone=payload.demographics.phone,
         emergency_contact_name=ec.name,
         emergency_contact_phone=ec.phone,
         emergency_contact_relationship=ec.relationship,
@@ -180,6 +201,23 @@ async def submit_intake(
     # Modality preference
     if payload.defaultModality:
         client_fields["default_modality"] = payload.defaultModality
+    if payload.demographics.smsReminderConsent is True:
+        client_fields["sms_consent_status"] = "consented"
+        client_fields["sms_consent_source"] = "client_intake"
+        client_fields["sms_consent_text"] = (
+            payload.demographics.smsReminderConsentText
+            or SMS_REMINDER_CONSENT_TEXT
+        )
+        client_fields["sms_consent_version"] = (
+            payload.demographics.smsReminderConsentVersion
+            or SMS_REMINDER_CONSENT_VERSION
+        )
+        client_fields["sms_consent_at"] = datetime.now(timezone.utc).isoformat()
+        client_fields["sms_consent_updated_by"] = user["uid"]
+    elif payload.demographics.smsReminderConsent is False:
+        client_fields["sms_consent_status"] = "declined"
+        client_fields["sms_consent_source"] = "client_intake"
+        client_fields["sms_consent_updated_by"] = user["uid"]
 
     await upsert_client(
         firebase_uid=user["uid"],

@@ -15,7 +15,7 @@
 | Workspace (telehealth) | no |
 
 ### Secrets Location
-All secrets live in gitignored `.env` files. **Read these files whenever you need credentials** — never ask the user for values that are already there.
+All secrets live in gitignored `.env` files. Only read them when a task genuinely requires a secret value, never print or summarize secret values, and prefer environment variables or Secret Manager references for deployed services.
 
 **`backend/api/.env`** contains:
 - `DATABASE_URL` — Postgres connection string (includes DB password and Cloud SQL IP)

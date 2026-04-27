@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from auth import verify_token
 from api_client import get_practice_profile
 from booking_emails import send_clinician_confirmation, send_client_confirmation
-from config import ALLOWED_ORIGINS
+from config import ALLOWED_ORIGINS, API_DOCS_ENABLED
 from compaction import get_client_context
 from context import compress_mid_session
 from gemini_session import build_system_prompt, run_voice_session
@@ -38,16 +38,24 @@ from alerts import notify_bd_new_intake
 
 from request_logging import RequestLoggingMiddleware
 from safe_logging import configure_safe_logging
+from security_headers import SecurityHeadersMiddleware
 
 # Configure PHI-safe logging before any other operations
 configure_safe_logging()
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Clinical Voice AI Relay", version="1.0.0")
+app = FastAPI(
+    title="Clinical Voice AI Relay",
+    version="1.0.0",
+    docs_url="/docs" if API_DOCS_ENABLED else None,
+    redoc_url="/redoc" if API_DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if API_DOCS_ENABLED else None,
+)
 
 # PHI-safe request logging middleware
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

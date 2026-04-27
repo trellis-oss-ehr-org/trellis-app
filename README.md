@@ -16,6 +16,8 @@ MIT-licensed, open-source, AI-native EHR for solo behavioral health therapists. 
 
 Trellis is designed to support HIPAA-regulated use when deployed and operated appropriately in a practice-controlled Google Cloud environment with the practice's own Google BAA. HIPAA compliance still depends on the practice's deployment, configuration, policies, risk analysis, workforce procedures, and any modifications made under the MIT license.
 
+See [HIPAA Engineering Notes](docs/hipaa-engineering-notes.md) for implementation safeguards, production deployment checks, and operational controls that must be handled outside the codebase. The hosted texting add-on flow is documented in [Texting BAA and Stripe Flow](docs/texting-baa-stripe-flow.md), with [Texting Support SOP](docs/texting-support-sop.md), [Texting Launch Checklist](docs/texting-launch-checklist.md), and [Texting Remaining Work](docs/texting-remaining-work.md).
+
 ## Tech Stack
 
 | Layer | Technology |

@@ -191,6 +191,23 @@ export interface PracticeProfile {
   practice_role?: PracticeRole | null;
 }
 
+/* Hosted text reminder connection */
+
+export interface TextingStatus {
+  configured: boolean;
+  install_id: string;
+  account_id: string | null;
+  status: string;
+  baa_status: string;
+  shared_number_attestation_status: string;
+  subscription_status: string;
+  telnyx_status: string;
+  credential_key_prefix: string | null;
+  last_error: string | null;
+  last_synced_at: string | null;
+  texting_enabled: boolean;
+}
+
 /* Client list item (from GET /api/clients) */
 
 export interface ClientListItem {

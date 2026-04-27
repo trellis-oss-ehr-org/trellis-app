@@ -18,9 +18,10 @@ import logging
 import os
 import sys
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from config import PROJECT_ID, REGION
 
@@ -38,6 +39,7 @@ from db import (
     get_all_clients,
     upsert_client,
     update_client,
+    update_client_texting_consent,
     update_client_insurance,
     get_client_by_id,
     get_client_encounters,
@@ -129,7 +131,21 @@ class ClientInviteRequest(BaseModel):
     intake_mode: str = "standard"  # "standard" or "iop"
 
 
+class TextingConsentUpdate(BaseModel):
+    status: Literal["unknown", "consented", "declined", "opted_out"]
+    source: str | None = Field(default=None, max_length=80)
+    consent_text: str | None = Field(default=None, max_length=1000)
+    consent_version: str | None = Field(default=None, max_length=80)
+
+
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
+SMS_REMINDER_CONSENT_VERSION = "2026-04-27-shared-trellis-number-v1"
+SMS_REMINDER_CONSENT_TEXT = (
+    "I agree to receive appointment reminder text messages sent by Trellis LLC "
+    "on behalf of my healthcare practice from a Trellis-managed texting number. "
+    "Message and data rates may apply. Reply STOP to opt out or HELP for help. "
+    "Consent is not required to receive care."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +481,8 @@ async def update_client_profile(
     if not client:
         raise HTTPException(404, "Client not found")
 
+    await enforce_clinician_owns_client(user, client.get("firebase_uid", ""))
+
     fields = {k: v for k, v in payload.model_dump().items() if v is not None}
     if not fields:
         return {"status": "no_changes"}
@@ -482,6 +500,44 @@ async def update_client_profile(
     )
 
     return {"status": "updated", "fields": list(fields.keys())}
+
+
+@router.patch("/clients/{client_id}/texting-consent")
+async def update_client_texting_consent_status(
+    client_id: str,
+    payload: TextingConsentUpdate,
+    request: Request,
+    user: dict = Depends(require_practice_member()),
+):
+    """Update a client's SMS reminder consent state. Clinician only."""
+    client = await get_client_by_id(client_id)
+    if not client:
+        raise HTTPException(404, "Client not found")
+
+    await enforce_clinician_owns_client(user, client.get("firebase_uid", ""))
+
+    updated = await update_client_texting_consent(
+        client["firebase_uid"],
+        status=payload.status,
+        source=payload.source or "clinician",
+        updated_by=user["uid"],
+        consent_text=payload.consent_text or SMS_REMINDER_CONSENT_TEXT,
+        consent_version=payload.consent_version or SMS_REMINDER_CONSENT_VERSION,
+    )
+    if not updated:
+        raise HTTPException(404, "Client not found")
+
+    await log_audit_event(
+        user_id=user["uid"],
+        action="updated_texting_consent",
+        resource_type="client",
+        resource_id=client_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        metadata={"status": payload.status, "source": payload.source or "clinician"},
+    )
+
+    return updated
 
 
 @router.get("/clients/{client_id}/encounters")

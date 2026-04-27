@@ -22,12 +22,18 @@ import time
 from fastapi import APIRouter, Header, HTTPException, Depends
 
 sys.path.insert(0, "../shared")
+from safe_logging import redact_phi
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 HEALTH_CHECK_SECRET = os.getenv("HEALTH_CHECK_SECRET", os.getenv("CRON_SECRET", ""))
+
+
+def _safe_health_error(exc: Exception, max_len: int = 160) -> str:
+    """Return a sanitized, bounded error message for health responses."""
+    return redact_phi(str(exc))[:max_len] or type(exc).__name__
 
 
 def _verify_health_secret(
@@ -53,7 +59,7 @@ async def _check_database() -> dict:
             "version": row["version"].split(",")[0] if row else "unknown",
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": _safe_health_error(e)}
 
 
 def _check_firebase() -> dict:
@@ -85,7 +91,7 @@ def _check_firebase() -> dict:
             }
         return {"status": "error", "message": "Firebase Admin SDK not initialized"}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": _safe_health_error(e)}
 
 
 def _check_calendar() -> dict:
@@ -112,7 +118,7 @@ def _check_calendar() -> dict:
         msg = str(e)
         if "delegation" in msg.lower() or "subject" in msg.lower():
             return {"status": "error", "message": "Domain-wide delegation not configured for Calendar scope"}
-        return {"status": "error", "message": msg[:200]}
+        return {"status": "error", "message": redact_phi(msg)[:160]}
 
 
 def _check_gmail() -> dict:
@@ -132,7 +138,7 @@ def _check_gmail() -> dict:
         msg = str(e)
         if "delegation" in msg.lower() or "subject" in msg.lower():
             return {"status": "error", "message": "Domain-wide delegation not configured for Gmail scope"}
-        return {"status": "error", "message": msg[:200]}
+        return {"status": "error", "message": redact_phi(msg)[:160]}
 
 
 def _check_drive() -> dict:
@@ -159,7 +165,7 @@ def _check_drive() -> dict:
         msg = str(e)
         if "delegation" in msg.lower() or "subject" in msg.lower():
             return {"status": "error", "message": "Domain-wide delegation not configured for Drive scope"}
-        return {"status": "error", "message": msg[:200]}
+        return {"status": "error", "message": redact_phi(msg)[:160]}
 
 
 def _check_speech() -> dict:
@@ -187,7 +193,7 @@ def _check_speech() -> dict:
             return {"status": "error", "message": "Speech-to-Text API not enabled or permission denied"}
         if "not found" in msg.lower():
             return {"status": "error", "message": "Speech-to-Text API not enabled for this project"}
-        return {"status": "error", "message": msg[:200]}
+        return {"status": "error", "message": redact_phi(msg)[:160]}
 
 
 async def _check_oauth_config() -> dict:
@@ -232,7 +238,7 @@ async def _check_oauth_config() -> dict:
             "sa_fallback": allow_fallback,
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)[:200]}
+        return {"status": "error", "message": _safe_health_error(e)}
 
 
 @router.post("/health")

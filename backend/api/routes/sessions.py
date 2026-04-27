@@ -32,6 +32,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from pydantic import BaseModel
 
+from config import is_production_like_environment
 from auth import require_role, require_practice_member, get_current_user_with_role, is_clinician, is_owner
 
 sys.path.insert(0, "../shared")
@@ -50,6 +51,7 @@ from db import (
     get_client,
     get_active_treatment_plan,
     get_pool,
+    get_clinician,
 )
 from compaction import trigger_compaction
 from note_generator import generate_note
@@ -65,7 +67,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Shared secret for cron endpoint authentication
-CRON_SECRET = os.getenv("CRON_SECRET", "dev-cron-secret")
+CRON_SECRET = os.getenv("CRON_SECRET", "")
+if not CRON_SECRET:
+    if is_production_like_environment():
+        raise RuntimeError("CRON_SECRET must be set in production-like environments.")
+    CRON_SECRET = "dev-cron-secret"
+if CRON_SECRET == "dev-cron-secret" and is_production_like_environment():
+    raise RuntimeError("CRON_SECRET must not use the development default in production.")
 
 # GCP project settings for Speech-to-Text
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "your-gcp-project")
@@ -157,6 +165,24 @@ def _client_ip(request: Request) -> str:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+async def _ensure_can_read_appointment_transcript(user: dict, appt: dict) -> None:
+    """Authorize transcript access for clients and group-practice clinicians."""
+    if not is_clinician(user):
+        if appt.get("client_id") != user["uid"]:
+            raise HTTPException(403, "Access denied")
+        return
+
+    clinician = await get_clinician(user["uid"])
+    if not clinician or clinician.get("status") != "active":
+        raise HTTPException(403, "Active clinician practice membership required")
+
+    if clinician.get("practice_role") == "owner":
+        return
+
+    if appt.get("clinician_id") != user["uid"]:
+        raise HTTPException(403, "Access denied")
 
 
 def _verify_cron_secret(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")) -> None:
@@ -1091,9 +1117,7 @@ async def get_session_transcript(
     if not appt:
         raise HTTPException(404, "Appointment not found")
 
-    # Access control
-    if not is_clinician(user) and appt.get("client_id") != user["uid"]:
-        raise HTTPException(403, "Access denied")
+    await _ensure_can_read_appointment_transcript(user, appt)
 
     if not appt.get("encounter_id"):
         recording_status = appt.get("recording_status", "unknown")

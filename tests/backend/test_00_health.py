@@ -5,6 +5,8 @@ async def test_root_health_returns_ok(client):
     """GET /health (root) returns simple ok."""
     resp = await client.get("/health")
     assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "no-store"
+    assert resp.headers["x-content-type-options"] == "nosniff"
     data = resp.json()
     assert data["status"] == "ok"
 

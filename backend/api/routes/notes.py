@@ -35,7 +35,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from auth import require_role, require_practice_member, is_owner
+from auth import (
+    enforce_clinician_owns_client,
+    require_practice_member,
+    is_owner,
+)
 
 sys.path.insert(0, "../shared")
 from db import (
@@ -189,6 +193,20 @@ async def _get_note(note_id: str) -> dict | None:
     }
 
 
+async def _require_accessible_client(user: dict, client_id: str) -> dict:
+    """Return a client record after enforcing group-practice access."""
+    client = await get_client(client_id)
+    if not client:
+        raise HTTPException(404, "Client not found")
+    await enforce_clinician_owns_client(user, client_id)
+    return client
+
+
+async def _ensure_note_access(user: dict, note: dict) -> None:
+    """Ensure the current clinician can access the note's client."""
+    await enforce_clinician_owns_client(user, note.get("client_id"))
+
+
 async def _create_clinical_note(
     encounter_id: str,
     note_format: str,
@@ -283,6 +301,8 @@ async def create_manual_note(
     empty transcript, then creates a blank note in the chosen format.
     Useful when recording fails or the clinician wants to write from memory.
     """
+    await _require_accessible_client(user, body.client_id)
+
     # Build blank content sections based on format
     if body.format == "SOAP":
         content = {
@@ -363,10 +383,9 @@ async def generate_note_from_dictation_endpoint(
         raise HTTPException(status_code=400, detail="Format must be SOAP, DAP, or narrative.")
 
     # Resolve client name for the prompt
-    client = await get_client(body.client_id)
+    client = await _require_accessible_client(user, body.client_id)
     client_name = "the client"
-    if client:
-        client_name = client.get("preferred_name") or (client.get("full_name") or "the client").split()[0]
+    client_name = client.get("preferred_name") or (client.get("full_name") or "the client").split()[0]
 
     # Get active treatment plan for context
     treatment_plan = await get_active_treatment_plan(body.client_id)
@@ -468,7 +487,7 @@ async def generate_note_from_dictation_endpoint(
 async def generate_clinical_note(
     body: GenerateNoteRequest,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Generate an AI clinical note from an encounter transcript.
 
@@ -482,6 +501,7 @@ async def generate_clinical_note(
     encounter = await _get_encounter(body.encounter_id)
     if not encounter:
         raise HTTPException(404, "Encounter not found")
+    await enforce_clinician_owns_client(user, encounter["client_id"])
 
     transcript = encounter.get("transcript", "")
     if not transcript:
@@ -593,7 +613,7 @@ async def generate_clinical_note(
 @router.get("/notes/signing/signature")
 async def get_signing_signature(
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Get the clinician's stored signature for reuse during note signing.
 
@@ -607,7 +627,7 @@ async def get_signing_signature(
 async def get_note_detail(
     note_id: str,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Get a single clinical note with its source encounter data.
 
@@ -617,6 +637,7 @@ async def get_note_detail(
     note = await _get_note(note_id)
     if not note:
         raise HTTPException(404, "Note not found")
+    await _ensure_note_access(user, note)
 
     # Get client info for display
     client = await get_client(note["client_id"])
@@ -681,7 +702,7 @@ async def update_note(
     note_id: str,
     body: UpdateNoteRequest,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Update a clinical note's content or status.
 
@@ -690,6 +711,7 @@ async def update_note(
     note = await _get_note(note_id)
     if not note:
         raise HTTPException(404, "Note not found")
+    await _ensure_note_access(user, note)
 
     if note["status"] in ("signed", "amended"):
         raise HTTPException(400, "Cannot edit a signed note. Create an amendment instead.")
@@ -739,7 +761,7 @@ async def sign_note(
     note_id: str,
     body: SignNoteRequest,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Sign and lock a clinical note.
 
@@ -755,6 +777,7 @@ async def sign_note(
     note = await _get_note(note_id)
     if not note:
         raise HTTPException(404, "Note not found")
+    await _ensure_note_access(user, note)
 
     if note["status"] not in ("draft", "review"):
         raise HTTPException(400, f"Cannot sign a note in '{note['status']}' status. Only draft or review notes can be signed.")
@@ -990,12 +1013,17 @@ async def sign_note(
 async def download_note_pdf(
     note_id: str,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Download the PDF of a signed clinical note.
 
     Returns the PDF as a binary download.
     """
+    note = await _get_note(note_id)
+    if not note:
+        raise HTTPException(404, "Note not found")
+    await _ensure_note_access(user, note)
+
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT pdf_data, status, format FROM clinical_notes WHERE id = $1::uuid",
@@ -1038,7 +1066,7 @@ async def create_amendment(
     note_id: str,
     body: AmendNoteRequest,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Create an amendment for a signed clinical note.
 
@@ -1049,6 +1077,7 @@ async def create_amendment(
     original = await _get_note(note_id)
     if not original:
         raise HTTPException(404, "Original note not found")
+    await _ensure_note_access(user, original)
 
     if original["status"] not in ("signed", "amended"):
         raise HTTPException(400, "Can only amend a signed note")
@@ -1099,9 +1128,14 @@ async def create_amendment(
 async def list_amendments(
     note_id: str,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """List all amendments for a given note."""
+    original = await _get_note(note_id)
+    if not original:
+        raise HTTPException(404, "Note not found")
+    await _ensure_note_access(user, original)
+
     pool = await get_pool()
     rows = await pool.fetch(
         """

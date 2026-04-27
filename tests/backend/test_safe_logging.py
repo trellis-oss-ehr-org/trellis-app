@@ -50,3 +50,15 @@ def test_phi_safe_formatter_redacts_exception_text():
     assert "Bearer abc123" not in rendered
     assert "[REDACTED_EMAIL]" in rendered
     assert "[REDACTED_BEARER_TOKEN]" in rendered
+
+
+def test_phi_safe_formatter_redacts_json_secret_values_and_ssn():
+    rendered = _format_record(
+        'payload={"refresh_token":"abc123","ssn":"123-45-6789"} api_key=secret123'
+    )
+
+    assert "abc123" not in rendered
+    assert "secret123" not in rendered
+    assert "123-45-6789" not in rendered
+    assert "[REDACTED_SECRET]" in rendered
+    assert "[REDACTED_SSN]" in rendered

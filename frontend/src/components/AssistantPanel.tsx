@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { useApi } from "../hooks/useApi";
 
 interface Message {
@@ -281,30 +281,84 @@ export function AssistantPanel({
 }
 
 /**
- * Simple markdown renderer for assistant responses.
- * Handles basic markdown: bold, italic, headers, lists, code.
+ * Safe markdown renderer for assistant responses.
+ * Handles basic markdown without injecting model-provided HTML into the DOM.
  */
 function MarkdownContent({ content }: { content: string }) {
-  // Simple markdown to HTML conversion
-  const html = content
-    // Headers
-    .replace(/^### (.+)$/gm, '<h4 class="font-semibold text-warm-800 mt-3 mb-1">$1</h4>')
-    .replace(/^## (.+)$/gm, '<h3 class="font-semibold text-warm-800 mt-3 mb-1">$1</h3>')
-    .replace(/^# (.+)$/gm, '<h2 class="font-bold text-warm-800 mt-3 mb-1">$1</h2>')
-    // Bold and italic
-    .replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    // Inline code
-    .replace(/`(.+?)`/g, '<code class="px-1 py-0.5 bg-warm-100 rounded text-xs font-mono">$1</code>')
-    // Bullet lists
-    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-    .replace(/^\* (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-    // Numbered lists
-    .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
-    // Line breaks
-    .replace(/\n\n/g, '<br/><br/>')
-    .replace(/\n/g, '<br/>');
+  return (
+    <div>
+      {content.split("\n").map((line, index) => (
+        <MarkdownLine key={index} line={line} />
+      ))}
+    </div>
+  );
+}
 
-  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+function MarkdownLine({ line }: { line: string }) {
+  if (!line.trim()) return <div className="h-2" />;
+
+  const heading = /^(#{1,3})\s+(.+)$/.exec(line);
+  if (heading) {
+    const level = heading[1] ?? "";
+    const text = heading[2] ?? "";
+    const className =
+      level.length === 1
+        ? "font-bold text-warm-800 mt-3 mb-1"
+        : "font-semibold text-warm-800 mt-3 mb-1";
+    const Tag = level.length === 1 ? "h2" : level.length === 2 ? "h3" : "h4";
+    return <Tag className={className}>{renderInlineMarkdown(text)}</Tag>;
+  }
+
+  const unordered = /^[-*]\s+(.+)$/.exec(line);
+  if (unordered) {
+    return <li className="ml-4 list-disc">{renderInlineMarkdown(unordered[1] ?? "")}</li>;
+  }
+
+  const ordered = /^\d+\.\s+(.+)$/.exec(line);
+  if (ordered) {
+    return <li className="ml-4 list-decimal">{renderInlineMarkdown(ordered[1] ?? "")}</li>;
+  }
+
+  return <p>{renderInlineMarkdown(line)}</p>;
+}
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const pattern = /(`[^`]+`|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    const key = `${match.index}-${token.length}`;
+    if (token.startsWith("`")) {
+      nodes.push(
+        <code key={key} className="px-1 py-0.5 bg-warm-100 rounded text-xs font-mono">
+          {token.slice(1, -1)}
+        </code>,
+      );
+    } else if (token.startsWith("***")) {
+      nodes.push(
+        <strong key={key}>
+          <em>{token.slice(3, -3)}</em>
+        </strong>,
+      );
+    } else if (token.startsWith("**")) {
+      nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith("*")) {
+      nodes.push(<em key={key}>{token.slice(1, -1)}</em>);
+    }
+
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
 }

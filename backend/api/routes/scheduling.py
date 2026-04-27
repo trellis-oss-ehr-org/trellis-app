@@ -25,7 +25,16 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, Header
 from pydantic import BaseModel
 
-from auth import get_current_user, get_current_user_with_role, require_role, is_clinician, enforce_client_owns_resource, is_owner
+from config import is_production_like_environment
+from auth import (
+    get_current_user,
+    get_current_user_with_role,
+    require_role,
+    require_practice_member,
+    is_clinician,
+    enforce_client_owns_resource,
+    is_owner,
+)
 
 sys.path.insert(0, "../shared")
 from db import (
@@ -44,8 +53,10 @@ from db import (
     release_appointment,
     get_expired_reconfirmations,
     get_upcoming_appointments_for_reminders,
+    get_text_reminder_candidates,
     mark_reminder_sent,
     mark_push_reminder_sent,
+    mark_text_reminder_sent,
     get_push_tokens_for_appointments,
     delete_push_subscription_by_token,
     get_past_due_appointments,
@@ -55,6 +66,8 @@ from db import (
     get_appointments_with_unsigned_docs,
     get_practice_profile,
     get_client,
+    get_clinician,
+    get_pool,
 )
 from gcal import create_calendar_event, delete_calendar_event, strip_conference_data
 from mailer import send_email
@@ -65,7 +78,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Shared secret for cron endpoint authentication (set via env var)
-CRON_SECRET = os.getenv("CRON_SECRET", "dev-cron-secret")
+CRON_SECRET = os.getenv("CRON_SECRET", "")
+if not CRON_SECRET:
+    if is_production_like_environment():
+        raise RuntimeError("CRON_SECRET must be set in production-like environments.")
+    CRON_SECRET = "dev-cron-secret"
+if CRON_SECRET == "dev-cron-secret" and is_production_like_environment():
+    raise RuntimeError("CRON_SECRET must not use the development default in production.")
 
 # Base URL for action links in emails
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5173")
@@ -84,6 +103,26 @@ def _client_ip(request: Request) -> str:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+async def _ensure_can_mutate_appointment(user: dict, appt: dict) -> None:
+    """Authorize appointment mutation for clients and group-practice clinicians."""
+    if not is_clinician(user):
+        enforce_client_owns_resource(user, appt.get("client_id"))
+        return
+
+    clinician = await get_clinician(user["uid"])
+    if not clinician or clinician.get("status") != "active":
+        raise HTTPException(403, "Active clinician practice membership required")
+
+    if clinician.get("practice_role") == "owner":
+        return
+
+    if appt.get("clinician_id") != user["uid"]:
+        raise HTTPException(
+            403,
+            "Access denied — you can only modify your own appointments.",
+        )
 
 
 def _verify_cron_secret(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")) -> None:
@@ -455,8 +494,7 @@ async def patch_appointment(
     if not appt:
         raise HTTPException(404, "Appointment not found")
 
-    # Clients can only modify their own appointments
-    enforce_client_owns_resource(user, appt.get("client_id"))
+    await _ensure_can_mutate_appointment(user, appt)
 
     if body.status == "cancelled" and appt.get("calendar_event_id"):
         try:
@@ -491,9 +529,29 @@ async def patch_appointment(
 async def end_series(
     recurrence_id: str,
     request: Request,
-    user: dict = Depends(require_role("clinician")),
+    user: dict = Depends(require_practice_member()),
 ):
     """Cancel all future appointments in a recurring series. Clinician only."""
+    pool = await get_pool()
+    series_owner = await pool.fetchrow(
+        """
+        SELECT clinician_id
+        FROM appointments
+        WHERE recurrence_id = $1::uuid
+        ORDER BY scheduled_at
+        LIMIT 1
+        """,
+        recurrence_id,
+    )
+    if not series_owner:
+        raise HTTPException(404, "Recurring series not found")
+
+    if not is_owner(user) and series_owner["clinician_id"] != user["uid"]:
+        raise HTTPException(
+            403,
+            "Access denied — you can only end your own appointment series.",
+        )
+
     count = await cancel_recurring_series(recurrence_id)
 
     await log_audit_event(
@@ -1148,6 +1206,8 @@ async def cron_send_reminders(
     upcoming = await get_upcoming_appointments_for_reminders(hours_ahead=24)
     sent_count = 0
     push_sent_count = 0
+    text_sent_count = 0
+    text_errors = 0
     errors = 0
 
     for appt in upcoming:
@@ -1259,7 +1319,42 @@ async def cron_send_reminders(
             except Exception as e:
                 logger.error("Failed to send push reminder for appointment %s: %s", appt["id"], e)
 
-    return {"sent_count": sent_count, "push_sent_count": push_sent_count, "errors": errors}
+    # --- Paid SMS reminders (hosted add-on) ---
+    text_candidates = await get_text_reminder_candidates(hours_ahead=24)
+    if text_candidates:
+        from routes.texting import send_appointment_reminder_text, texting_send_available
+
+        if await texting_send_available():
+            for appt in text_candidates:
+                try:
+                    await send_appointment_reminder_text(appt)
+                    await mark_text_reminder_sent(appt["id"])
+                    text_sent_count += 1
+
+                    await log_audit_event(
+                        user_id=None,
+                        action="text_reminder_sent",
+                        resource_type="appointment",
+                        resource_id=appt["id"],
+                        ip_address=_client_ip(request),
+                        user_agent="Cloud Scheduler",
+                        metadata={"template": "appointment_reminder"},
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Failed to send text reminder for appointment %s: %s",
+                        appt["id"],
+                        e,
+                    )
+                    text_errors += 1
+
+    return {
+        "sent_count": sent_count,
+        "push_sent_count": push_sent_count,
+        "text_sent_count": text_sent_count,
+        "text_errors": text_errors,
+        "errors": errors,
+    }
 
 
 @router.post("/cron/check-no-shows")

@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useAuth } from "../hooks/useAuth";
 import { useGoogleOAuth } from "../hooks/useGoogleOAuth";
 import { Button } from "../components/Button";
-import type { PracticeProfile } from "../types";
+import type { PracticeProfile, TextingStatus } from "../types";
 
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -53,20 +53,6 @@ interface FormData {
   default_session_duration: string;
   intake_duration: string;
   timezone: string;
-}
-
-interface TextingStatus {
-  configured: boolean;
-  install_id: string;
-  account_id: string | null;
-  status: string;
-  baa_status: string;
-  subscription_status: string;
-  telnyx_status: string;
-  credential_key_prefix: string | null;
-  last_error: string | null;
-  last_synced_at: string | null;
-  texting_enabled: boolean;
 }
 
 function profileToForm(p: PracticeProfile): FormData {
@@ -135,6 +121,7 @@ function Input({
 export default function PracticeSettingsPage() {
   const api = useApi();
   const { isOwner, practiceType } = useAuth();
+  const navigate = useNavigate();
   const [form, setForm] = useState<FormData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -334,22 +321,7 @@ export default function PracticeSettingsPage() {
   }
 
   async function handleTextingPrimary() {
-    if (!textingStatus?.configured) return;
-    setTextingAction(true);
-    setTextingNotice("");
-    try {
-      if (textingStatus.texting_enabled) {
-        const data = await api.post<{ url: string }>("/api/texting/billing-portal", {});
-        window.location.href = data.url;
-        return;
-      }
-      const data = await api.post<{ onboarding_url: string }>("/api/texting/onboarding/start", {});
-      window.location.href = data.onboarding_url;
-    } catch (e: any) {
-      setTextingNotice(e.message || "Unable to start texting setup");
-    } finally {
-      setTextingAction(false);
-    }
+    navigate("/settings/texting");
   }
 
   const canManagePractice = practiceType === "solo" || isOwner;
@@ -747,11 +719,7 @@ function TextingConnectionCard({
       : pending
         ? "bg-amber-500"
         : "bg-warm-300";
-  const buttonLabel = enabled
-    ? "Manage"
-    : pending
-      ? "Refresh"
-      : "Turn on";
+  const buttonLabel = "Open setup";
 
   return (
     <div className="bg-white rounded-2xl border border-warm-100 shadow-sm mb-6">
@@ -770,8 +738,12 @@ function TextingConnectionCard({
         </div>
 
         {status && (
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
             <StatusPill label="BAA" value={status.baa_status === "signed" ? "Signed" : "Not signed"} />
+            <StatusPill
+              label="Sender"
+              value={status.shared_number_attestation_status === "accepted" ? "Accepted" : "Not accepted"}
+            />
             <StatusPill label="Stripe" value={status.subscription_status.replace(/_/g, " ")} />
             <StatusPill label="Telnyx" value={status.telnyx_status.replace(/_/g, " ")} />
           </div>
@@ -785,26 +757,23 @@ function TextingConnectionCard({
         )}
 
         <div className="mt-4 flex items-center gap-3">
-          {pending ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onRefresh}
-              disabled={working || loading}
-            >
-              {working ? "Checking..." : buttonLabel}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={onPrimary}
-              disabled={!configured || working || loading}
-            >
-              {working ? "Working..." : buttonLabel}
-            </Button>
-          )}
+          <Button
+            type="button"
+            size="sm"
+            onClick={onPrimary}
+            disabled={!configured || working || loading}
+          >
+            {working ? "Working..." : buttonLabel}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            disabled={working || loading}
+          >
+            Refresh
+          </Button>
           {status?.last_synced_at && (
             <span className="text-xs text-warm-400">
               Last checked {new Date(status.last_synced_at).toLocaleString()}

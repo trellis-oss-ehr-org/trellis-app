@@ -14,6 +14,7 @@ import ClientListPage from "./pages/ClientListPage";
 import ClientDetailPage from "./pages/ClientDetailPage";
 import PracticeSetupPage from "./pages/PracticeSetupPage";
 import PracticeSettingsPage from "./pages/PracticeSettingsPage";
+import TextingSetupPage from "./pages/TextingSetupPage";
 import SigningPage from "./pages/SigningPage";
 import SetupWizardPage from "./pages/SetupWizardPage";
 import SchedulePage from "./pages/SchedulePage";
@@ -151,6 +152,7 @@ function AppRoutes() {
         <Route path="/billing/reports" element={<OwnerRoute><FinancialReportsPage /></OwnerRoute>} />
         <Route path="/billing/claims/:superbillId/review" element={<OwnerRoute><ClaimReviewPage /></OwnerRoute>} />
         <Route path="/settings/practice" element={<PracticeSettingsPage />} />
+        <Route path="/settings/texting" element={<OwnerRoute><TextingSetupPage /></OwnerRoute>} />
         <Route path="/settings/team" element={<OwnerRoute><TeamManagementPage /></OwnerRoute>} />
         <Route path="/settings/audit-log" element={<OwnerRoute><AuditLogPage /></OwnerRoute>} />
       </Route>

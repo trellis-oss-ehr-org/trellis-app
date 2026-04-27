@@ -10,10 +10,11 @@ sys.path.insert(0, str(_here.parent / "shared"))  # local dev: backend/shared
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import ALLOWED_ORIGINS
+from config import ALLOWED_ORIGINS, API_DOCS_ENABLED
 from db import close_pool
 from request_logging import RequestLoggingMiddleware
 from safe_logging import configure_safe_logging
+from security_headers import SecurityHeadersMiddleware
 from routes.intake import router as intake_router
 from routes.documents import router as documents_router
 from routes.scheduling import router as scheduling_router
@@ -35,10 +36,17 @@ from routes.texting import router as texting_router
 # Configure PHI-safe logging before any other operations
 configure_safe_logging()
 
-app = FastAPI(title="Trellis EHR API", version="0.1.0")
+app = FastAPI(
+    title="Trellis EHR API",
+    version="0.1.0",
+    docs_url="/docs" if API_DOCS_ENABLED else None,
+    redoc_url="/redoc" if API_DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if API_DOCS_ENABLED else None,
+)
 
 # PHI-safe request logging middleware (logs method, path, status, duration — no PHI)
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

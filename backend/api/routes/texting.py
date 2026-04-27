@@ -5,22 +5,36 @@ hosted trellis-services backend remains authoritative for BAA, Stripe status,
 and Telnyx delivery.
 """
 import sys
+import hmac
+import json
 import logging
 from datetime import datetime, timezone
+from typing import Literal
 
 import httpx
 from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from auth import require_practice_member
-from config import FRONTEND_BASE_URL, TEXTING_SERVICE_URL, is_production_like_environment
+from auth import enforce_clinician_owns_client, require_practice_member
+from config import (
+    API_BASE_URL,
+    FRONTEND_BASE_URL,
+    TEXTING_SERVICE_URL,
+    is_production_like_environment,
+)
 
 sys.path.insert(0, "../shared")
 from db import (
+    get_appointment,
+    get_client,
     get_practice,
     get_texting_connection,
     update_texting_connection,
+    mark_text_reminder_sent,
+    normalize_phone_number_for_texting,
+    opt_out_clients_by_phone_sha256,
+    sha256_hex,
     log_audit_event,
 )
 from token_encryption import decrypt_token, encrypt_token
@@ -36,16 +50,69 @@ class CompleteOnboardingRequest(BaseModel):
 
 
 class SendTextRequest(BaseModel):
-    to_number: str = Field(min_length=7, max_length=32)
-    body: str = Field(min_length=1, max_length=1600)
-    install_message_id: str | None = None
-    metadata: dict | None = None
+    client_id: str
+    appointment_id: str
+    template: Literal["appointment_reminder"] = "appointment_reminder"
+
+
+class HostedTextingWebhook(BaseModel):
+    event_type: Literal["sms_opt_out"]
+    install_id: str
+    phone_sha256: str
+    provider_event_id: str | None = None
+    occurred_at: str | None = None
 
 
 def _service_url() -> str:
     if not TEXTING_SERVICE_URL:
         raise HTTPException(503, "TEXTING_SERVICE_URL is not configured")
     return TEXTING_SERVICE_URL
+
+
+def _onboarding_secret(conn: dict) -> str:
+    secret = conn.get("onboarding_secret")
+    if not secret:
+        raise HTTPException(
+            500,
+            "Texting onboarding secret is not configured; run the latest database migrations.",
+        )
+    return secret
+
+
+def _install_callback_secret_hash(conn: dict) -> str:
+    return sha256_hex(_onboarding_secret(conn))
+
+
+def _webhook_signature_payload(timestamp: str, payload: bytes) -> bytes:
+    return timestamp.encode("utf-8") + b"|" + payload
+
+
+def _verify_hosted_webhook_signature(
+    conn: dict,
+    payload: bytes,
+    install_id: str | None,
+    timestamp: str | None,
+    signature: str | None,
+) -> None:
+    if install_id != conn["install_id"]:
+        raise HTTPException(403, "Invalid install id")
+    if not timestamp or not signature:
+        raise HTTPException(403, "Missing hosted webhook signature")
+    try:
+        signed_at = int(timestamp)
+    except ValueError as exc:
+        raise HTTPException(403, "Invalid hosted webhook timestamp") from exc
+    now = int(datetime.now(timezone.utc).timestamp())
+    if abs(now - signed_at) > 5 * 60:
+        raise HTTPException(403, "Expired hosted webhook timestamp")
+
+    expected = hmac.new(
+        _install_callback_secret_hash(conn).encode("utf-8"),
+        _webhook_signature_payload(timestamp, payload),
+        "sha256",
+    ).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        raise HTTPException(403, "Invalid hosted webhook signature")
 
 
 def _texting_service_error(resp: httpx.Response) -> str:
@@ -95,23 +162,65 @@ async def _service_credential(conn: dict) -> str | None:
 
 
 def _public_connection(conn: dict, configured: bool) -> dict:
+    texting_enabled = _local_texting_enabled(conn)
     return {
         "configured": configured,
         "install_id": conn["install_id"],
         "account_id": conn["account_id"],
         "status": conn["status"],
         "baa_status": conn["baa_status"],
+        "shared_number_attestation_status": conn.get(
+            "shared_number_attestation_status",
+            "not_accepted",
+        ),
         "subscription_status": conn["subscription_status"],
         "telnyx_status": conn["telnyx_status"],
         "credential_key_prefix": conn["credential_key_prefix"],
         "last_error": conn["last_error"],
         "last_synced_at": conn["last_synced_at"],
-        "texting_enabled": (
-            conn["baa_status"] == "signed"
-            and conn["subscription_status"] in {"active", "trialing"}
-            and bool(conn["credential_secret"])
-        ),
+        "texting_enabled": texting_enabled,
     }
+
+
+def _local_texting_enabled(conn: dict) -> bool:
+    return (
+        conn["baa_status"] == "signed"
+        and conn.get("shared_number_attestation_status") == "accepted"
+        and conn["subscription_status"] in {"active", "trialing"}
+        and bool(conn["credential_secret"])
+    )
+
+
+async def texting_send_available() -> bool:
+    """Return whether this install can attempt paid SMS sends."""
+    if not TEXTING_SERVICE_URL:
+        return False
+    conn = await get_texting_connection()
+    return _local_texting_enabled(conn)
+
+
+def _format_sms_date_time(scheduled_at: str) -> tuple[str, str]:
+    appt_dt = datetime.fromisoformat(scheduled_at)
+    date_str = f"{appt_dt.strftime('%b')} {appt_dt.day}, {appt_dt.year}"
+    time_str = appt_dt.strftime("%I:%M %p").lstrip("0")
+    return date_str, time_str
+
+
+def _build_appointment_reminder_sms(scheduled_at: str) -> str:
+    date_str, time_str = _format_sms_date_time(scheduled_at)
+    return (
+        f"Trellis reminder: appointment on {date_str} at {time_str}. "
+        "Reply STOP to opt out. Msg&data rates may apply."
+    )
+
+
+def _validate_client_texting_consent(client: dict) -> None:
+    if client.get("sms_consent_status") != "consented":
+        raise HTTPException(409, "Client has not consented to text reminders")
+    if client.get("sms_opted_out_at"):
+        raise HTTPException(409, "Client has opted out of text reminders")
+    if not (client.get("phone") or "").strip():
+        raise HTTPException(409, "Client does not have a phone number")
 
 
 async def _sync_status_from_service(conn: dict) -> dict:
@@ -137,6 +246,10 @@ async def _sync_status_from_service(conn: dict) -> dict:
             account_id=data.get("account_id") or conn.get("account_id"),
             status="active" if data.get("texting_enabled") else data.get("subscription_status", "unknown"),
             baa_status=data.get("baa_status", conn["baa_status"]),
+            shared_number_attestation_status=data.get(
+                "shared_number_attestation_status",
+                conn.get("shared_number_attestation_status", "not_accepted"),
+            ),
             subscription_status=data.get("subscription_status", conn["subscription_status"]),
             telnyx_status=data.get("telnyx_status", conn["telnyx_status"]),
             last_error=None,
@@ -147,6 +260,47 @@ async def _sync_status_from_service(conn: dict) -> dict:
             status="error",
             last_error=str(exc)[:500],
         )
+
+
+@router.post("/texting/webhooks/hosted")
+async def hosted_texting_webhook(request: Request):
+    """Receive signed hosted-service events for this local install."""
+    conn = await get_texting_connection()
+    raw_payload = await request.body()
+    _verify_hosted_webhook_signature(
+        conn,
+        raw_payload,
+        request.headers.get("x-trellis-install-id"),
+        request.headers.get("x-trellis-timestamp"),
+        request.headers.get("x-trellis-signature-sha256"),
+    )
+
+    try:
+        payload = HostedTextingWebhook.model_validate(json.loads(raw_payload))
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid hosted texting webhook") from exc
+
+    if payload.install_id != conn["install_id"]:
+        raise HTTPException(403, "Invalid install id")
+
+    updated_clients = await opt_out_clients_by_phone_sha256(
+        payload.phone_sha256,
+        source="telnyx_stop",
+        updated_by="hosted_texting_webhook",
+    )
+    await log_audit_event(
+        user_id=None,
+        action="texting_opt_out_synced",
+        resource_type="texting_consent",
+        resource_id=payload.provider_event_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        metadata={
+            "event_type": payload.event_type,
+            "matched_clients": len(updated_clients),
+        },
+    )
+    return {"status": "processed", "matched_clients": len(updated_clients)}
 
 
 @router.get("/texting/status")
@@ -169,11 +323,13 @@ async def start_texting_onboarding(
 
     payload = {
         "install_id": conn["install_id"],
+        "install_secret": _onboarding_secret(conn),
         "practice_id": user["practice_id"],
         "practice_name": practice["name"] if practice else None,
         "owner_uid": user["uid"],
         "owner_email": user.get("email"),
-        "return_url": f"{FRONTEND_BASE_URL}/settings/practice",
+        "return_url": f"{FRONTEND_BASE_URL}/settings/texting",
+        "install_callback_url": f"{API_BASE_URL}/api/texting/webhooks/hosted",
     }
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.post(
@@ -222,6 +378,7 @@ async def complete_texting_onboarding(
             f"{service_url}/v1/texting/install/exchange",
             json={
                 "install_id": conn["install_id"],
+                "install_secret": _onboarding_secret(conn),
                 "session_id": body.session_id,
                 "exchange_code": body.exchange_code,
             },
@@ -257,6 +414,10 @@ async def complete_texting_onboarding(
         credential_key_prefix=data["key_prefix"],
         status="active",
         baa_status=data.get("baa_status", "signed"),
+        shared_number_attestation_status=data.get(
+            "shared_number_attestation_status",
+            "accepted",
+        ),
         subscription_status=data.get("status", "active"),
         telnyx_status=data.get("telnyx_status", "ready"),
         last_error=None,
@@ -295,14 +456,13 @@ async def texting_billing_portal(user: dict = Depends(require_practice_member("o
     return resp.json()
 
 
-@router.post("/texting/messages")
-async def send_text_message(
-    body: SendTextRequest,
-    user: dict = Depends(require_practice_member()),
-):
-    """Forward an authenticated text request to hosted Trellis/Telnyx."""
+async def _send_text_to_service(
+    conn: dict,
+    to_number: str,
+    message_body: str,
+    install_message_id: str,
+) -> dict:
     service_url = _service_url()
-    conn = await get_texting_connection()
     credential = await _service_credential(conn)
     if not credential:
         raise HTTPException(402, "Texting is not connected")
@@ -313,12 +473,69 @@ async def send_text_message(
             headers={"Authorization": f"Bearer {credential}"},
             json={
                 "install_id": conn["install_id"],
-                "to_number": body.to_number,
-                "body": body.body,
-                "install_message_id": body.install_message_id,
-                "metadata": body.metadata,
+                "to_number": to_number,
+                "body": message_body,
+                "install_message_id": install_message_id,
+                "metadata": {"template": "appointment_reminder"},
             },
         )
     if resp.status_code >= 400:
         raise HTTPException(resp.status_code, "Texting message request failed")
     return resp.json()
+
+
+async def send_appointment_reminder_text(
+    appt: dict,
+    client: dict | None = None,
+) -> dict:
+    """Send the approved SMS appointment reminder template for one appointment."""
+    client = client or await get_client(appt["client_id"])
+    if not client:
+        raise HTTPException(404, "Client not found")
+    _validate_client_texting_consent(client)
+
+    if appt.get("status") != "scheduled":
+        raise HTTPException(400, "Only scheduled appointments can receive reminders")
+
+    conn = await get_texting_connection()
+    if not _local_texting_enabled(conn):
+        raise HTTPException(402, "Texting is not connected")
+
+    message_body = _build_appointment_reminder_sms(appt["scheduled_at"])
+    install_message_id = f"appointment:{appt['id']}:reminder24h"
+    return await _send_text_to_service(
+        conn,
+        to_number=normalize_phone_number_for_texting(client["phone"]),
+        message_body=message_body,
+        install_message_id=install_message_id,
+    )
+
+
+@router.post("/texting/messages")
+async def send_text_message(
+    body: SendTextRequest,
+    request: Request,
+    user: dict = Depends(require_practice_member()),
+):
+    """Send an approved text template through hosted Trellis/Telnyx."""
+    client = await get_client(body.client_id)
+    if not client:
+        raise HTTPException(404, "Client not found")
+    await enforce_clinician_owns_client(user, body.client_id)
+
+    appt = await get_appointment(body.appointment_id)
+    if not appt or appt.get("client_id") != body.client_id:
+        raise HTTPException(404, "Appointment not found")
+
+    result = await send_appointment_reminder_text(appt, client=client)
+    await mark_text_reminder_sent(appt["id"])
+    await log_audit_event(
+        user_id=user["uid"],
+        action="text_reminder_sent",
+        resource_type="appointment",
+        resource_id=appt["id"],
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        metadata={"template": body.template, "client_id": body.client_id},
+    )
+    return result

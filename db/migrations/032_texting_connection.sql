@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS texting_connection (
     credential_key_prefix  TEXT,
     status                 TEXT NOT NULL DEFAULT 'not_started',
     baa_status             TEXT NOT NULL DEFAULT 'not_signed',
+    shared_number_attestation_status TEXT NOT NULL DEFAULT 'not_accepted',
     subscription_status    TEXT NOT NULL DEFAULT 'not_started',
     telnyx_status          TEXT NOT NULL DEFAULT 'not_provisioned',
     last_error             TEXT,

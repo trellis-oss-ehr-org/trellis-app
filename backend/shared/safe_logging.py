@@ -20,7 +20,6 @@ Safe to log:
   - Timing/duration metrics
   - Record counts
   - Error types (not error messages containing PHI)
-  - Configuration values
   - Service operational state
 """
 import copy
@@ -55,6 +54,27 @@ def redact_phi(message: str) -> str:
     message = re.sub(
         r'(?i)\b(token|access_token|refresh_token|id_token|api_key|secret|password)=([^\s&]+)',
         r'\1=[REDACTED_SECRET]',
+        message,
+    )
+    message = re.sub(
+        r'(?i)("?(?:token|access_token|refresh_token|id_token|api_key|secret|password)"?\s*:\s*)"[^"]*"',
+        r'\1"[REDACTED_SECRET]"',
+        message,
+    )
+    message = re.sub(
+        r'(?i)(\b(?:token|access_token|refresh_token|id_token|api_key|secret|password)\b\s*:\s*)[^\s,;]+',
+        r'\1[REDACTED_SECRET]',
+        message,
+    )
+    # Redact SSN-like identifiers.
+    message = re.sub(
+        r'(?<!\d)\d{3}-\d{2}-\d{4}(?!\d)',
+        '[REDACTED_SSN]',
+        message,
+    )
+    message = re.sub(
+        r'(?i)\b(member_id|policy_id|subscriber_id|group_number)=([^\s&]+)',
+        r'\1=[REDACTED_IDENTIFIER]',
         message,
     )
     return message
