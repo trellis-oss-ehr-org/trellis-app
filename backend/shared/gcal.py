@@ -133,35 +133,6 @@ async def create_calendar_event(
     logger.info("Calendar event created: %s (meet=%s)", event_id, meet_link)
     return meet_link, event_id
 
-
-async def update_calendar_event(
-    event_id: str,
-    attendee_emails: list[str] | None = None,
-    summary: str | None = None,
-    clinician_email: str = "",
-    clinician_uid: str | None = None,
-) -> None:
-    """Update an existing calendar event (e.g. add attendees to group events)."""
-    creds = await _resolve_creds(clinician_email, clinician_uid)
-    service = _build_calendar_service(creds)
-
-    event = service.events().get(calendarId="primary", eventId=event_id).execute()
-
-    if attendee_emails is not None:
-        event["attendees"] = [{"email": e} for e in attendee_emails]
-    if summary is not None:
-        event["summary"] = summary
-
-    service.events().update(
-        calendarId="primary",
-        eventId=event_id,
-        body=event,
-        sendUpdates="all",
-    ).execute()
-
-    logger.info("Calendar event updated: %s", event_id)
-
-
 async def delete_calendar_event(
     event_id: str,
     clinician_email: str = "",

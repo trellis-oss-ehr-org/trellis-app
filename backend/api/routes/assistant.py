@@ -18,14 +18,13 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
 
 
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from auth import require_role, require_practice_member, is_owner
+from auth import require_practice_member, is_owner
 
 sys.path.insert(0, "../shared")
 from db import get_pool, log_audit_event

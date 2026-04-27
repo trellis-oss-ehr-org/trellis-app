@@ -1,6 +1,4 @@
 """Tests for clinical note generation, editing, and signing endpoints."""
-import json
-import pytest
 from conftest import clinician_headers, client_headers
 
 

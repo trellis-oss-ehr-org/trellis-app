@@ -35,15 +35,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from auth import require_role, require_practice_member, is_owner, enforce_clinician_owns_client
+from auth import require_role, require_practice_member, is_owner
 
 sys.path.insert(0, "../shared")
 from db import (
     get_pool,
-    get_appointment,
     get_active_treatment_plan,
     get_client,
-    get_client_by_id,
     get_unsigned_notes,
     get_stored_signature,
     upsert_stored_signature,
@@ -56,7 +54,6 @@ from note_generator import generate_note, regenerate_note, generate_note_from_di
 from note_pdf import generate_note_pdf
 from treatment_plan_generator import generate_treatment_plan as ai_generate_plan
 from db import create_treatment_plan, supersede_treatment_plan
-from superbill_pdf import CPT_DESCRIPTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -661,9 +658,6 @@ async def get_note_detail(
             "created_at": a["created_at"].isoformat(),
         })
 
-    # If this is an amendment, get the original note id
-    original_note_id = note.get("amendment_of")
-
     await log_audit_event(
         user_id=user["uid"],
         action="viewed",
@@ -1146,4 +1140,3 @@ async def list_amendments(
     )
 
     return {"amendments": amendments, "count": len(amendments)}
-

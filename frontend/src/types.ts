@@ -1,52 +1,47 @@
-export interface User {
-  uid: string;
-  email: string;
-  role: "clinician" | "admin" | "client";
-  displayName?: string;
-  photoURL?: string;
-}
-
 /* WebSocket message types matching relay protocol */
 
-export interface WsAuthMessage {
+interface WsAuthMessage {
   type: "auth";
   token: string;
-  sessionType: "intake" | "note" | "record";
+  sessionType: "intake" | "journal";
   clientId: string;
+  intakeMode: "standard" | "iop";
 }
 
-export interface WsReadyMessage {
+interface WsReadyMessage {
   type: "ready";
   sessionId: string;
 }
 
-export interface WsTranscriptMessage {
+interface WsTranscriptMessage {
   type: "transcript";
   text: string;
 }
 
-export interface WsTurnCompleteMessage {
+interface WsTurnCompleteMessage {
   type: "turn_complete";
 }
 
-export interface WsInterviewEndedMessage {
+interface WsInterviewEndedMessage {
   type: "interview_ended";
 }
 
-export interface WsCompleteMessage {
+interface WsCompleteMessage {
   type: "complete";
   sessionId: string;
   result: Record<string, unknown>;
 }
 
-export interface WsErrorMessage {
+interface WsErrorMessage {
   type: "error";
   message: string;
 }
 
-export interface WsEndMessage {
+interface WsEndMessage {
   type: "end";
 }
+
+export type WsClientMessage = WsAuthMessage | WsEndMessage;
 
 export type WsServerMessage =
   | WsReadyMessage
@@ -96,27 +91,7 @@ export interface Appointment {
 
 export type PracticeType = "solo" | "group";
 export type PracticeRole = "owner" | "clinician";
-export type ClinicianStatus = "active" | "invited" | "deactivated";
-
-export interface Practice {
-  id: string;
-  name: string;
-  type: PracticeType;
-  tax_id: string | null;
-  npi: string | null;
-  phone: string | null;
-  email: string | null;
-  website: string | null;
-  address_line1: string | null;
-  address_line2: string | null;
-  address_city: string | null;
-  address_state: string | null;
-  address_zip: string | null;
-  accepted_insurances: string[] | null;
-  timezone: string | null;
-  created_at: string;
-  updated_at: string;
-}
+type ClinicianStatus = "active" | "invited" | "deactivated";
 
 export interface Clinician {
   id: string;

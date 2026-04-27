@@ -190,7 +190,6 @@ def build_cms1500_data(
     practice_npi = _safe(practice.get("npi"))
     practice_tax_id = _safe(practice.get("tax_id"))
 
-    clinician_name = _safe(clinician.get("clinician_name"))
     clinician_npi = _safe(clinician.get("npi"))
 
     # Patient account number: first 8 chars of client UUID
@@ -383,7 +382,6 @@ def generate_cms1500_pdf(
     half = pw / 2
 
     # Box 1: Insurance type + Box 1a: Insured ID
-    y0 = pdf.get_y()
     pdf._labeled_field("1. INSURANCE TYPE:", fields["box_1"], 28, half - 28)
     pdf._labeled_field("1a. INSURED'S ID:", fields["box_1a"], 26, half - 28)
     pdf.ln(5)

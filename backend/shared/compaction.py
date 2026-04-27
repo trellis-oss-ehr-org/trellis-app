@@ -9,7 +9,6 @@ fidelity context injection.
 All AI features pull context through get_client_context(), which returns
 the compressed portrait + recent raw encounters.
 """
-import asyncio
 import logging
 import os
 

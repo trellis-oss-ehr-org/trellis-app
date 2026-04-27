@@ -13,7 +13,6 @@ Endpoints:
   - GET /api/audit-log — paginated audit log with filters
 """
 import sys
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request
 

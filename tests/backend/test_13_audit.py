@@ -1,5 +1,4 @@
 """Tests for audit log endpoints."""
-import pytest
 from conftest import clinician_headers, client_headers
 
 

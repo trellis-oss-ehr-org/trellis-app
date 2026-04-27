@@ -3,18 +3,18 @@ import { auth, onAuthStateChanged, type User } from "../lib/firebase";
 import { API_BASE } from "../lib/api-config";
 import type { PracticeType, PracticeRole, Clinician } from "../types";
 
-export type AppRole = "clinician" | "client" | null;
+type AppRole = "clinician" | "client" | null;
 
 export type IntakeMode = "standard" | "iop";
 
-export interface InviteInfo {
+interface InviteInfo {
   practice_name: string;
   clinician_name: string;
   email: string;
   intake_mode: IntakeMode;
 }
 
-export interface AuthContextValue {
+interface AuthContextValue {
   user: User | null;
   loading: boolean;
   role: AppRole;

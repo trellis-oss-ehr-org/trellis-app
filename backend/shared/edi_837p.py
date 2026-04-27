@@ -250,8 +250,6 @@ class EDI837PBuilder:
             self._add(f"HL*{subscriber_hl}*{billing_hl}*22*0")
 
             # SBR - Subscriber Information
-            payer_name = _safe(cl.get("payer_name"))
-            has_secondary = bool(_safe(cl.get("secondary_payer_name")))
             payer_responsibility = "P"  # Primary
             self._add(f"SBR*{payer_responsibility}*18*{_safe(cl.get('group_number'))}******CI")
 

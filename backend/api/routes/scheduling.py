@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, Header
 from pydantic import BaseModel
 
-from auth import get_current_user, get_current_user_with_role, require_role, is_clinician, enforce_client_owns_resource, require_practice_member, is_owner
+from auth import get_current_user, get_current_user_with_role, require_role, is_clinician, enforce_client_owns_resource, is_owner
 
 sys.path.insert(0, "../shared")
 from db import (
@@ -34,7 +34,6 @@ from db import (
     create_appointment,
     get_appointments,
     get_appointment,
-    get_appointment_client,
     update_appointment_status,
     cancel_recurring_series,
     get_booked_slots,
@@ -57,7 +56,7 @@ from db import (
     get_practice_profile,
     get_client,
 )
-from gcal import create_calendar_event, update_calendar_event, delete_calendar_event, strip_conference_data
+from gcal import create_calendar_event, delete_calendar_event, strip_conference_data
 from mailer import send_email
 from routes.documents import auto_generate_consent_package
 
@@ -1443,7 +1442,7 @@ Sign now: {signing_url}
         try:
             await send_email(
                 to=appt["client_email"],
-                subject=f"Please Sign Your Documents Before Your Appointment",
+                subject="Please Sign Your Documents Before Your Appointment",
                 html_body=html,
                 text_body=text,
                 clinician_uid=appt.get("clinician_id"),

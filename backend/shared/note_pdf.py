@@ -11,7 +11,6 @@ import base64
 import io
 import logging
 import re
-import textwrap
 from datetime import datetime
 
 from fpdf import FPDF

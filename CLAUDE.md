@@ -637,7 +637,7 @@ curl -s "https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accoun
 - Firebase Auth (Google + Email/Password). All API endpoints require valid Firebase JWT.
 - Role-based access: `users.role` (clinician/client). `require_role()` middleware.
 - Row-level access: Clients can only access their own records.
-- Re-authentication: Sensitive actions require re-auth via `useReauth` hook (5-min cache).
+- Re-authentication: `ReauthProvider`/`ReauthModal` are mounted for future high-risk workflows, but routine clinical signing uses the active authenticated session.
 
 ### Session Security (45 CFR 164.312(a)(2)(iii))
 - 15-minute inactivity timeout with 13-minute warning modal.

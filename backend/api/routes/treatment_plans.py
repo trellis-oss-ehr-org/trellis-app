@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from auth import require_role, require_practice_member, is_owner, enforce_clinician_owns_client
+from auth import require_practice_member, is_owner, enforce_clinician_owns_client
 
 sys.path.insert(0, "../shared")
 from db import (
@@ -47,8 +47,6 @@ from db import (
     get_treatment_plans_due_for_review,
     get_client,
     get_client_by_id,
-    get_client_notes,
-    get_client_encounters,
     get_stored_signature,
     upsert_stored_signature,
     get_practice_profile,

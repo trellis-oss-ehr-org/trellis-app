@@ -17,7 +17,6 @@ HIPAA Access Control:
 """
 import asyncio
 import logging
-import os
 import sys
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -27,7 +26,6 @@ from auth import (
     get_current_user,
     require_role,
     require_practice_member,
-    is_owner,
 )
 
 sys.path.insert(0, "../shared")

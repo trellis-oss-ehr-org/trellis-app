@@ -1,5 +1,4 @@
 """Tests for cron endpoints (Cloud Scheduler)."""
-import pytest
 
 
 CRON_HEADERS = {"X-Cron-Secret": "dev-cron-secret"}

@@ -1,5 +1,4 @@
 """Integration tests — multi-step workflows spanning multiple endpoints."""
-import pytest
 from datetime import datetime, timedelta
 from conftest import clinician_headers, client_headers
 
@@ -52,7 +51,6 @@ async def test_full_intake_to_note_workflow(client):
             test_client = c
             break
     assert test_client is not None
-    client_uuid = test_client["id"]
 
     # 4. Set availability and book appointment
     await client.put(

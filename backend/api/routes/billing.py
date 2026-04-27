@@ -37,7 +37,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from auth import (
-    require_role,
     get_current_user_with_role,
     enforce_client_owns_resource,
     require_practice_member,

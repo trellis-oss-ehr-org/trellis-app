@@ -101,7 +101,7 @@ def _check_calendar() -> dict:
         creds = _get_credentials(sender)
         service = build("calendar", "v3", credentials=creds, cache_discovery=False)
         # List calendars to verify access
-        result = service.calendarList().list(maxResults=1).execute()
+        service.calendarList().list(maxResults=1).execute()
         return {
             "status": "ok",
             "message": "Calendar API accessible via domain-wide delegation",
@@ -148,7 +148,7 @@ def _check_drive() -> dict:
         creds = _get_credentials(sender)
         service = build("drive", "v3", credentials=creds, cache_discovery=False)
         # List files (limit 1) to verify access
-        result = service.files().list(pageSize=1, fields="files(id,name)").execute()
+        service.files().list(pageSize=1, fields="files(id,name)").execute()
         return {
             "status": "ok",
             "message": "Drive API accessible via domain-wide delegation",
@@ -176,7 +176,7 @@ def _check_speech() -> dict:
         # List recognizers to test API access (doesn't process any audio)
         parent = f"projects/{project_id}/locations/global"
         request = cloud_speech.ListRecognizersRequest(parent=parent)
-        response = client.list_recognizers(request=request)
+        client.list_recognizers(request=request)
         return {
             "status": "ok",
             "message": f"Speech-to-Text V2 API accessible (project: {project_id})",

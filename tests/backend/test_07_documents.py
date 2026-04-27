@@ -2,7 +2,6 @@
 import hashlib
 import json
 
-import pytest
 from conftest import clinician_headers, client_headers
 
 

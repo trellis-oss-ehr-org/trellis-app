@@ -13,7 +13,6 @@ HIPAA Access Control:
 All endpoints log to audit_events for HIPAA compliance.
 Client endpoints scope queries to the authenticated user's firebase_uid.
 """
-import base64
 import json
 import logging
 import os
@@ -27,7 +26,6 @@ from config import PROJECT_ID, REGION
 
 from auth import (
     get_current_user,
-    require_role,
     require_practice_member,
     is_owner,
     enforce_clinician_owns_client,
@@ -46,7 +44,6 @@ from db import (
     get_client_notes,
     get_active_treatment_plan,
     get_client_appointments,
-    get_client_document_signing_status,
     get_future_appointments,
     get_client_recurrence_ids,
     discharge_client,

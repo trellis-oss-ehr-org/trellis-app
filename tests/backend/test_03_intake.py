@@ -1,5 +1,4 @@
 """Tests for intake submission endpoint."""
-import pytest
 from conftest import client_headers
 
 

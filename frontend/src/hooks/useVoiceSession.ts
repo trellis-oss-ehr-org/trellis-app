@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./useAuth";
 import { WS_BASE } from "../lib/api-config";
-import type { WsServerMessage } from "../types";
+import type { WsClientMessage, WsServerMessage } from "../types";
 
 export type VoiceStatus =
   | "idle"
@@ -152,15 +152,14 @@ export function useVoiceSession(options?: UseVoiceSessionOptions): UseVoiceSessi
 
       ws.onopen = () => {
         // Send auth handshake
-        ws.send(
-          JSON.stringify({
-            type: "auth",
-            token,
-            sessionType,
-            clientId: user.uid,
-            intakeMode,
-          })
-        );
+        const authMessage: WsClientMessage = {
+          type: "auth",
+          token,
+          sessionType,
+          clientId: user.uid,
+          intakeMode,
+        };
+        ws.send(JSON.stringify(authMessage));
       };
 
       ws.onmessage = (event) => {
@@ -237,7 +236,8 @@ export function useVoiceSession(options?: UseVoiceSessionOptions): UseVoiceSessi
     setStatus("ended");
     statusRef.current = "ended";
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "end" }));
+      const endMessage: WsClientMessage = { type: "end" };
+      wsRef.current.send(JSON.stringify(endMessage));
     }
     cleanup();
     wsRef.current?.close();

@@ -1,5 +1,4 @@
 """Tests for clinician availability endpoints."""
-import pytest
 from conftest import clinician_headers, client_headers
 
 

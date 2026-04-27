@@ -1,6 +1,5 @@
 """Tests for role-based access control and row-level security."""
-import pytest
-from conftest import clinician_headers, client_headers, client2_headers, make_token
+from conftest import clinician_headers, client_headers, client2_headers
 from datetime import datetime, timedelta
 
 

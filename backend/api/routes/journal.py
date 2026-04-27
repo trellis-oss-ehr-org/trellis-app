@@ -676,8 +676,6 @@ async def transcribe_dictation(
     if len(audio_bytes) > 25 * 1024 * 1024:
         raise HTTPException(400, "Audio file too large (max 25MB)")
 
-    mime_type = audio.content_type or "audio/webm"
-
     try:
         from google.cloud import speech_v2
         from google.cloud.speech_v2.types import cloud_speech

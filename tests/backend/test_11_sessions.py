@@ -1,5 +1,4 @@
 """Tests for session recording configuration endpoints."""
-import pytest
 from conftest import clinician_headers
 
 

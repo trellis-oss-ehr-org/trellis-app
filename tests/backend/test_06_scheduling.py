@@ -1,5 +1,4 @@
 """Tests for scheduling/appointment endpoints."""
-import pytest
 from datetime import datetime, timedelta
 from conftest import clinician_headers, client_headers
 

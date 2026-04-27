@@ -32,7 +32,7 @@ from pathlib import Path as _Path
 _here = _Path(__file__).resolve().parent
 sys.path.insert(0, str(_here.parent / "shared"))  # local dev: backend/shared
 sys.path.insert(0, str(_here / "shared"))          # Docker: /app/shared
-from db import close_pool, create_encounter, update_encounter, get_client, get_clinician
+from db import close_pool, create_encounter, update_encounter, get_client
 from compaction import trigger_compaction
 from alerts import notify_bd_new_intake
 

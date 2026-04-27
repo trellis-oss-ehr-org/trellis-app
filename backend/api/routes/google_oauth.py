@@ -18,7 +18,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import RedirectResponse
 
-from auth import get_current_user, require_role
+from auth import require_role
 
 sys.path.insert(0, "../shared")
 from db import (

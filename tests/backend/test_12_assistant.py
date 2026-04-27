@@ -1,5 +1,4 @@
 """Tests for AI assistant endpoint."""
-import pytest
 from conftest import clinician_headers, client_headers
 
 

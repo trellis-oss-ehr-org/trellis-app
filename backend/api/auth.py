@@ -14,9 +14,8 @@ import json
 import base64
 import logging
 import os
-from functools import wraps
 
-from fastapi import HTTPException, Request, Depends
+from fastapi import HTTPException, Request
 
 from config import is_production_like_environment
 

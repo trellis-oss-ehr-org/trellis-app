@@ -1,5 +1,4 @@
 """Tests for auth/register and auth/me endpoints."""
-import pytest
 from conftest import make_token, clinician_headers, client_headers
 from auth import dev_mode_is_forbidden
 
