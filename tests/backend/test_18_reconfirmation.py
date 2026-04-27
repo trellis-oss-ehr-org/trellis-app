@@ -1,5 +1,4 @@
 """Tests for reconfirmation flow (token-based, unauthenticated endpoints)."""
-import pytest
 from datetime import datetime, timedelta
 from conftest import clinician_headers, client_headers
 
@@ -36,7 +35,8 @@ async def _setup_appointment_with_reconfirmation(client):
         headers=clinician_headers(),
     )
 
-    # Book assessment
+    # Book a recurring individual series. Reconfirmation is sent for the next
+    # appointment in a series after the source appointment.
     future = datetime.now() + timedelta(days=7, hours=10)
     resp = await client.post(
         "/api/appointments",
@@ -49,6 +49,7 @@ async def _setup_appointment_with_reconfirmation(client):
             "type": "individual",
             "scheduled_at": future.isoformat(),
             "duration_minutes": 50,
+            "cadence": "weekly",
         },
         headers=clinician_headers(),
     )
@@ -107,8 +108,8 @@ async def test_reconfirmation_change_invalid_token(client):
 async def test_reconfirmation_flow(client):
     """Full reconfirmation flow: trigger → info → confirm."""
     appt_id, token = await _setup_appointment_with_reconfirmation(client)
-    if not token:
-        pytest.skip("Could not set up reconfirmation (no token returned)")
+    assert appt_id is not None
+    assert token is not None
 
     # Get info
     resp = await client.get(f"/api/reconfirmation/{token}/info")
@@ -127,8 +128,8 @@ async def test_reconfirmation_flow(client):
 async def test_reconfirmation_cancel_flow(client):
     """Reconfirmation cancel marks appointment as cancelled."""
     appt_id, token = await _setup_appointment_with_reconfirmation(client)
-    if not token:
-        pytest.skip("Could not set up reconfirmation (no token returned)")
+    assert appt_id is not None
+    assert token is not None
 
     resp = await client.get(f"/api/reconfirmation/{token}/cancel")
     assert resp.status_code == 200
@@ -139,8 +140,8 @@ async def test_reconfirmation_cancel_flow(client):
 async def test_reconfirmation_already_responded(client):
     """After responding, further actions return already_responded."""
     appt_id, token = await _setup_appointment_with_reconfirmation(client)
-    if not token:
-        pytest.skip("Could not set up reconfirmation (no token returned)")
+    assert appt_id is not None
+    assert token is not None
 
     # Confirm first
     await client.get(f"/api/reconfirmation/{token}/confirm")
@@ -155,8 +156,8 @@ async def test_reconfirmation_already_responded(client):
 async def test_reconfirmation_change_flow(client):
     """Reconfirmation change reschedules the appointment."""
     appt_id, token = await _setup_appointment_with_reconfirmation(client)
-    if not token:
-        pytest.skip("Could not set up reconfirmation (no token returned)")
+    assert appt_id is not None
+    assert token is not None
 
     new_time = (datetime.now() + timedelta(days=14, hours=10)).isoformat()
     resp = await client.post(
