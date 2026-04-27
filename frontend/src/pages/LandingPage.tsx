@@ -305,11 +305,11 @@ export default function LandingPage() {
                 <span className="text-teal-300">Your Software.</span>
               </h1>
               <p className="text-lg sm:text-xl text-teal-100/80 max-w-2xl mx-auto mb-8 leading-relaxed">
-                Trellis is an open-source, AI-native EHR for behavioral health
+                Trellis is an MIT-licensed, open-source, AI-native EHR for behavioral health
                 therapists. Intake, scheduling, notes, billing, claims, payments
                 &mdash; all automated. You own the software and the data.
                 Everything is fully customizable, and any features you don't need
-                are a snap to remove. Just pay for HIPAA-secure cloud hosting
+                are a snap to remove. Just pay for your own Google Cloud hosting
                 and the features you actually use.
               </p>
               <p className="text-teal-300/90 text-lg font-medium mb-10">
@@ -358,14 +358,14 @@ export default function LandingPage() {
             <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
             </svg>
-            Open Source &middot; HIPAA Compliant &middot; Self-Hosted
+            MIT Licensed &middot; HIPAA-Oriented Safeguards &middot; Self-Hosted
           </div>
           <h2 className="font-display text-3xl sm:text-4xl font-bold text-warm-800 mb-4">
             An EHR That's Truly Yours
           </h2>
           <p className="text-warm-500 text-lg max-w-2xl mx-auto leading-relaxed">
-            Trellis is free, open-source software that you deploy to your own
-            HIPAA-secure Google Cloud account. You own every line of code and
+            Trellis is free, MIT-licensed open-source software that you deploy to your own
+            Google Cloud account with your own BAA and safeguards. You own every line of code and
             every byte of data. Start at $10/month for a full EHR, and add AI notes,
             telehealth, and messaging whenever you're ready. Your practice grows
             on your terms &mdash; and everything stays with you, always.
@@ -595,11 +595,13 @@ export default function LandingPage() {
       <section className="py-24 px-6 bg-warm-50">
         <div className="max-w-5xl mx-auto">
           <h2 className="font-display text-3xl sm:text-4xl font-bold text-warm-800 text-center mb-4">
-            HIPAA Compliant by Design
+            Built to Support HIPAA Safeguards
           </h2>
           <p className="text-warm-500 text-center max-w-2xl mx-auto mb-16 text-lg">
-            Trellis runs on your own Google Cloud account with a signed Business
-            Associate Agreement. Your data lives in your own cloud &mdash; fully under your control.
+            Trellis runs in your own Google Cloud account, where your practice can
+            sign its own Business Associate Agreement. Your data lives in your own cloud
+            and your practice remains responsible for configuration, policies, risk analysis,
+            and legal compliance.
           </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
@@ -661,15 +663,15 @@ export default function LandingPage() {
               },
               {
                 q: "What do I actually pay for?",
-                a: "The core EHR \u2014 scheduling, client management, billing, documents, client portal \u2014 runs on HIPAA-secure cloud hosting for about $10/month. AI features (voice intake, session notes, treatment plans) add $10\u2013$30/month in token costs depending on usage. Telehealth with session recording is $25/month for a Google Workspace subscription. SMS reminders are $10/month. Electronic claims (RCM) pricing is discussed per practice. You only pay for what you turn on.",
+                a: "The core EHR \u2014 scheduling, client management, billing, documents, client portal \u2014 runs in your own Google Cloud project for about $10/month. AI features (voice intake, session notes, treatment plans) add $10\u2013$30/month in token costs depending on usage. Telehealth with session recording is $25/month for a Google Workspace subscription. SMS reminders are $10/month. Electronic claims (RCM) pricing is discussed per practice. You only pay for what you turn on.",
               },
               {
                 q: "What if I want to switch to something else?",
                 a: "Your data stays in your own Google Cloud database. You can export it anytime, switch to another system, or keep the database running independently. There's nothing to cancel \u2014 you own everything.",
               },
               {
-                q: "Is this really HIPAA compliant?",
-                a: "Yes. Trellis runs on Google Cloud with a signed BAA. Data is encrypted at rest and in transit, access is role-based and audited, and all PHI handling follows HIPAA technical safeguards. The code is open source so you can verify this yourself.",
+                q: "Does this support HIPAA-regulated use?",
+                a: "Trellis is designed around HIPAA technical safeguards: Google Cloud BAA support, encryption at rest and in transit, role-based access, audit logging, and minimum-necessary data handling. Each practice remains responsible for its own deployment, configuration, policies, risk analysis, workforce procedures, and legal compliance.",
               },
               {
                 q: "Can I use this with insurance clients?",

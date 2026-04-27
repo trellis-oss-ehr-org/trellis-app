@@ -202,7 +202,7 @@ test.describe('Audit Log Page', () => {
   test('page loads with heading and description', async ({ page }) => {
     await setupAuditPage(page);
     await expect(page.getByRole('heading', { name: 'Audit Log' })).toBeVisible();
-    await expect(page.getByText('HIPAA-compliant activity log')).toBeVisible();
+    await expect(page.getByText('HIPAA-oriented audit log')).toBeVisible();
   });
 
   test('settings tab navigation shows Profile link and active Audit Log tab', async ({ page }) => {

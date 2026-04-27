@@ -154,8 +154,8 @@ function StepWelcome() {
             desc: "Everything runs in your own GCP project. Patient data never leaves your infrastructure.",
           },
           {
-            title: "HIPAA Compliant",
-            desc: "Google Cloud BAA, encrypted at rest, audit logging, session timeouts, and more.",
+            title: "HIPAA-Oriented Safeguards",
+            desc: "Google Cloud BAA support, encryption at rest, audit logging, session timeouts, and more.",
           },
           {
             title: "AI-Powered Workflow",

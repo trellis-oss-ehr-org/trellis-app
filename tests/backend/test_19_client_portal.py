@@ -26,7 +26,7 @@ async def _register_and_book(client):
     await client.put(
         "/api/availability",
         json={
-            "slots": [
+            "windows": [
                 {
                     "day_of_week": (datetime.now() + timedelta(days=7)).weekday(),
                     "start_time": "09:00",
@@ -53,10 +53,10 @@ async def _register_and_book(client):
         },
         headers=clinician_headers(),
     )
-    if resp.status_code != 201:
+    if resp.status_code != 200:
         return None
     data = resp.json()
-    appt_ids = data.get("appointment_ids", [])
+    appt_ids = [appt["id"] for appt in data.get("appointments", [])]
     return appt_ids[0] if appt_ids else None
 
 
@@ -155,7 +155,8 @@ async def test_client_my_superbills(client):
     assert resp.status_code == 200
     data = resp.json()
     assert "superbills" in data
-    assert "total_billed" in data
+    assert "client_balance" in data
+    assert "total_billed" in data["client_balance"]
 
 
 async def test_client_my_profile(client):

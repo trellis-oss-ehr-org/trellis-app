@@ -1,6 +1,6 @@
 # Trellis
 
-Open-source, AI-native EHR for solo behavioral health therapists. Automates the full clinical workflow: client intake via AI voice agent, scheduling, session recording, note generation, and billing document generation.
+MIT-licensed, open-source, AI-native EHR for solo behavioral health therapists. Automates the full clinical workflow: client intake via AI voice agent, scheduling, session recording, note generation, and billing document generation.
 
 ## Features
 
@@ -12,8 +12,9 @@ Open-source, AI-native EHR for solo behavioral health therapists. Automates the 
 - **Document Management** — Consent forms, HIPAA notices, and e-signatures
 - **Billing** — Superbill generation, CMS-1500 forms, and 837P export
 - **Client Portal** — Clients can view appointments, sign documents, and complete intake
-- **Group Therapy** — Recurring groups, enrollment, attendance tracking
-- **HIPAA Compliant** — Audit logging, encryption at rest/in transit, session timeouts, role-based access
+- **HIPAA-oriented safeguards** — Audit logging, encryption at rest/in transit, session timeouts, role-based access
+
+Trellis is designed to support HIPAA-regulated use when deployed and operated appropriately in a practice-controlled Google Cloud environment with the practice's own Google BAA. HIPAA compliance still depends on the practice's deployment, configuration, policies, risk analysis, workforce procedures, and any modifications made under the MIT license.
 
 ## Tech Stack
 
@@ -58,11 +59,23 @@ If you prefer to set things up manually, follow the phases in [CLAUDE.md](CLAUDE
 
 ```bash
 make install          # Install all dependencies
+make db-up            # Start local Postgres test database
+make db-reset         # Reset local test database and apply migrations
 make dev              # Start all services (API :8080, Relay :8081, Frontend :5173)
 make dev-api          # Start API only
 make dev-relay        # Start relay only
 make dev-frontend     # Start frontend only
 ```
+
+### Backend Tests
+
+Backend tests use a local Docker Postgres database named `trellis_test` and synthetic test data only.
+
+```bash
+make test-backend
+```
+
+This starts Postgres, drops/recreates the local test schema, applies `db/migrations/*.sql`, and runs `tests/backend`. To run against an already-provisioned database, set `DATABASE_URL` and use `make test-backend-existing-db`.
 
 ## Architecture
 

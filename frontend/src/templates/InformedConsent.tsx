@@ -81,8 +81,8 @@ export function InformedConsent({ content, practice: rawPractice }: TemplateProp
       <p className="text-sm text-warm-700">
         With your consent, sessions may be audio-recorded to support accurate
         clinical documentation. Recordings are used solely for generating session
-        notes and are stored securely within the practice's HIPAA-compliant
-        systems. You may decline recording at any time without affecting your
+        notes and are stored within the practice's systems configured with
+        HIPAA-oriented safeguards. You may decline recording at any time without affecting your
         care. Your clinician will confirm your preference before recording any
         session.
       </p>

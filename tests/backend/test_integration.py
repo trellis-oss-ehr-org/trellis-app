@@ -38,7 +38,7 @@ async def test_full_intake_to_note_workflow(client):
         headers=client_headers(),
     )
     assert resp.status_code == 200
-    encounter_id = resp.json().get("encounter_id")
+    encounter_id = resp.json().get("encounterId")
     assert encounter_id is not None
 
     # 3. Verify client appears in client list
@@ -56,7 +56,7 @@ async def test_full_intake_to_note_workflow(client):
     await client.put(
         "/api/availability",
         json={
-            "slots": [
+            "windows": [
                 {
                     "day_of_week": (datetime.now() + timedelta(days=3)).weekday(),
                     "start_time": "08:00",
@@ -82,8 +82,8 @@ async def test_full_intake_to_note_workflow(client):
         },
         headers=clinician_headers(),
     )
-    assert resp.status_code == 201
-    appt_ids = resp.json()["appointment_ids"]
+    assert resp.status_code == 200
+    appt_ids = [appt["id"] for appt in resp.json()["appointments"]]
     assert len(appt_ids) > 0
 
     # 5. Generate a clinical note from the encounter
@@ -220,7 +220,7 @@ async def test_appointment_lifecycle(client, sent_emails):
     await client.put(
         "/api/availability",
         json={
-            "slots": [
+            "windows": [
                 {
                     "day_of_week": target_day,
                     "start_time": "09:00",
@@ -247,8 +247,8 @@ async def test_appointment_lifecycle(client, sent_emails):
         },
         headers=clinician_headers(),
     )
-    assert resp.status_code == 201
-    appt_id = resp.json()["appointment_ids"][0]
+    assert resp.status_code == 200
+    appt_id = resp.json()["appointments"][0]["id"]
 
     # 4. List appointments
     start = datetime.now().strftime("%Y-%m-%dT00:00:00")

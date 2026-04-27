@@ -18,6 +18,36 @@ DATABASE_URL = os.getenv(
 )
 
 
+def _coerce_date(value):
+    """Normalize date-like API/AI values before binding to DATE parameters."""
+    if value in (None, ""):
+        return None
+
+    from datetime import date as _date, datetime as _datetime
+
+    if isinstance(value, _datetime):
+        return value.date()
+    if isinstance(value, _date):
+        return value
+    if isinstance(value, str):
+        return _date.fromisoformat(value[:10])
+    return value
+
+
+def _coerce_datetime(value):
+    """Normalize timestamp-like values before binding to TIMESTAMPTZ parameters."""
+    if value in (None, ""):
+        return None
+
+    from datetime import datetime as _datetime
+
+    if isinstance(value, _datetime):
+        return value
+    if isinstance(value, str):
+        return _datetime.fromisoformat(value)
+    return value
+
+
 async def _init_connection(conn):
     """Set up JSONB codec so asyncpg returns Python dicts for JSONB columns."""
     import json as _json
@@ -1817,7 +1847,7 @@ async def create_treatment_plan(
         __to_json(diagnoses or []),
         __to_json(goals or []),
         presenting_problems,
-        review_date,
+        _coerce_date(review_date),
         source_encounter_id,
         previous_version_id,
         clinician_id,
@@ -1870,10 +1900,10 @@ async def update_treatment_plan(plan_id: str, **kwargs) -> None:
             vals.append(__to_json(val))
         elif key == "review_date":
             sets.append(f"{key} = ${idx}::date")
-            vals.append(val)
+            vals.append(_coerce_date(val))
         elif key == "signed_at":
             sets.append(f"{key} = ${idx}::timestamptz")
-            vals.append(val)
+            vals.append(_coerce_datetime(val))
         else:
             sets.append(f"{key} = ${idx}")
             vals.append(val)
@@ -1959,7 +1989,7 @@ async def sign_treatment_plan(
         WHERE id = $6::uuid
         """,
         signed_by,
-        signed_at,
+        _coerce_datetime(signed_at),
         content_hash,
         signature_data,
         pdf_data,

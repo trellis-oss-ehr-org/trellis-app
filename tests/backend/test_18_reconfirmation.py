@@ -25,7 +25,7 @@ async def _setup_appointment_with_reconfirmation(client):
     await client.put(
         "/api/availability",
         json={
-            "slots": [
+            "windows": [
                 {
                     "day_of_week": (datetime.now() + timedelta(days=7)).weekday(),
                     "start_time": "09:00",
@@ -52,12 +52,12 @@ async def _setup_appointment_with_reconfirmation(client):
         },
         headers=clinician_headers(),
     )
-    if resp.status_code != 201:
+    if resp.status_code != 200:
         return None, None
 
     data = resp.json()
     # Get the first appointment ID
-    appt_ids = data.get("appointment_ids", [])
+    appt_ids = [appt["id"] for appt in data.get("appointments", [])]
     if not appt_ids:
         return None, None
 

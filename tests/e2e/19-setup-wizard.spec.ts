@@ -21,7 +21,7 @@ test.describe('Setup Wizard (Public)', () => {
 
   test('shows welcome content with feature cards', async ({ page }) => {
     await expect(page.getByText('Your Data, Your Control')).toBeVisible();
-    await expect(page.getByText('HIPAA Compliant')).toBeVisible();
+    await expect(page.getByText('HIPAA-Oriented Safeguards')).toBeVisible();
     await expect(page.getByText('AI-Powered Workflow')).toBeVisible();
     await expect(page.getByText('Google Workspace Integration')).toBeVisible();
   });

@@ -47,7 +47,7 @@ export function TelehealthConsent({ content, practice: rawPractice }: TemplatePr
       </h2>
       <ul className="list-disc list-inside space-y-1 text-sm text-warm-700">
         <li>
-          Sessions are conducted over HIPAA-compliant, encrypted platforms,
+          Sessions are conducted over encrypted platforms configured for HIPAA-regulated use,
           which may include Google Meet or other secure video services.
         </li>
         <li>

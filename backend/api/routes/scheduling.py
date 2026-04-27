@@ -919,12 +919,22 @@ async def send_reconfirmation(
 # Reconfirmation action endpoints (unauthenticated, token-based)
 # ---------------------------------------------------------------------------
 
-@router.get("/reconfirmation/{token}/confirm")
-async def reconfirmation_confirm(token: str, request: Request):
-    """Client confirms their next appointment (keeps the recurring slot)."""
+async def _get_reconfirmation_appointment_or_404(token: str) -> dict:
+    try:
+        uuid.UUID(token)
+    except ValueError:
+        raise HTTPException(404, "Invalid or expired reconfirmation link")
+
     appt = await get_appointment_by_reconfirmation_token(token)
     if not appt:
         raise HTTPException(404, "Invalid or expired reconfirmation link")
+    return appt
+
+
+@router.get("/reconfirmation/{token}/confirm")
+async def reconfirmation_confirm(token: str, request: Request):
+    """Client confirms their next appointment (keeps the recurring slot)."""
+    appt = await _get_reconfirmation_appointment_or_404(token)
 
     if appt.get("reconfirmation_response"):
         return {"status": "already_responded", "response": appt["reconfirmation_response"]}
@@ -953,9 +963,7 @@ async def reconfirmation_confirm(token: str, request: Request):
 @router.get("/reconfirmation/{token}/cancel")
 async def reconfirmation_cancel(token: str, request: Request):
     """Client cancels (skips) one instance — series continues."""
-    appt = await get_appointment_by_reconfirmation_token(token)
-    if not appt:
-        raise HTTPException(404, "Invalid or expired reconfirmation link")
+    appt = await _get_reconfirmation_appointment_or_404(token)
 
     if appt.get("reconfirmation_response"):
         return {"status": "already_responded", "response": appt["reconfirmation_response"]}
@@ -991,9 +999,7 @@ async def reconfirmation_cancel(token: str, request: Request):
 @router.get("/reconfirmation/{token}/info")
 async def reconfirmation_info(token: str):
     """Get appointment info for the reconfirmation change flow (frontend use)."""
-    appt = await get_appointment_by_reconfirmation_token(token)
-    if not appt:
-        raise HTTPException(404, "Invalid or expired reconfirmation link")
+    appt = await _get_reconfirmation_appointment_or_404(token)
 
     return {
         "appointment": {
@@ -1016,9 +1022,7 @@ async def reconfirmation_change(
     request: Request,
 ):
     """Client picks a different time for this appointment instance."""
-    appt = await get_appointment_by_reconfirmation_token(token)
-    if not appt:
-        raise HTTPException(404, "Invalid or expired reconfirmation link")
+    appt = await _get_reconfirmation_appointment_or_404(token)
 
     if appt.get("reconfirmation_response"):
         return {"status": "already_responded", "response": appt["reconfirmation_response"]}

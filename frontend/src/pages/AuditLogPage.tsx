@@ -88,7 +88,7 @@ export default function AuditLogPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-warm-800">Audit Log</h1>
         <p className="text-warm-500 text-sm mt-1">
-          HIPAA-compliant activity log. All reads and writes to protected health
+          HIPAA-oriented audit log. All reads and writes to protected health
           information are recorded here.
         </p>
         <div className="flex gap-4 mt-4 border-b border-warm-100 pb-px">

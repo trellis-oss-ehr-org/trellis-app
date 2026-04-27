@@ -1,6 +1,6 @@
 """Shared fixtures and helpers for Trellis API tests.
 
-Uses the real database (Cloud SQL) with DEV_MODE=1 for JWT bypass.
+Uses the local test database with DEV_MODE=1 for JWT bypass.
 All GCP services (Calendar, Gmail, Drive, Vision, AI) are mocked.
 """
 import base64
@@ -18,7 +18,7 @@ from httpx import ASGITransport, AsyncClient
 # Environment setup — must happen BEFORE importing the app
 # ---------------------------------------------------------------------------
 os.environ["DEV_MODE"] = "1"
-os.environ.setdefault("DATABASE_URL", "postgresql://postgres:password@localhost:5432/trellis")
+os.environ.setdefault("DATABASE_URL", "postgresql://postgres:password@localhost:5432/trellis_test")
 os.environ.setdefault("CRON_SECRET", "dev-cron-secret")
 os.environ.setdefault("GCP_PROJECT_ID", "your-project-id")
 os.environ.setdefault("GCP_REGION", "us-central1")
@@ -115,19 +115,26 @@ async def client():
 _sent_emails: list[dict] = []
 
 
-def _mock_send_email(to, subject, html_body, text_body=None):
+def _mock_send_email(to, subject, html_body, text_body=None, **kwargs):
     _sent_emails.append(
-        {"to": to, "subject": subject, "html_body": html_body, "text_body": text_body}
+        {
+            "to": to,
+            "subject": subject,
+            "html_body": html_body,
+            "text_body": text_body,
+            **kwargs,
+        }
     )
 
 
 def _mock_send_email_with_attachment(
     to, subject, html_body, text_body=None,
     attachment_data=None, attachment_filename=None, attachment_mime_type=None,
+    **kwargs,
 ):
     _sent_emails.append(
         {"to": to, "subject": subject, "html_body": html_body, "text_body": text_body,
-         "attachment_filename": attachment_filename}
+         "attachment_filename": attachment_filename, **kwargs}
     )
 
 
@@ -445,120 +452,44 @@ def sent_emails():
 # Database cleanup — remove test data after each test
 # ---------------------------------------------------------------------------
 
-@pytest_asyncio.fixture(autouse=True)
-async def cleanup_test_data():
-    """Clean up test data created during each test.
-
-    Uses a fresh asyncpg connection (not the app pool) to avoid event loop
-    conflicts between the ASGI app and the test fixture teardown.
-    """
-    yield
-
+async def _clean_database():
+    """Reset domain data while keeping install-level migration seed rows."""
     import asyncpg
 
-    conn = await asyncpg.connect(os.environ["DATABASE_URL"].replace(
-        "postgresql://", "postgresql://"
-    ))
-
+    conn = await asyncpg.connect(os.environ["DATABASE_URL"])
     try:
-        # Delete test data in dependency order
-        test_uids = [
-            "test-clinician-1", "test-client-1", "test-client-2",
-            f"test-clinician-1-{TEST_RUN_ID}",
-            f"test-client-1-{TEST_RUN_ID}",
-            f"test-client-2-{TEST_RUN_ID}",
-        ]
-
-        client_uids = test_uids
-
-        # Superbills
-        await conn.execute(
-            "DELETE FROM superbills WHERE client_id = ANY($1::text[])",
-            client_uids,
-        )
-
-        # Clinical notes (via encounters)
         await conn.execute(
             """
-            DELETE FROM clinical_notes WHERE encounter_id IN (
-                SELECT id FROM encounters WHERE client_id = ANY($1::text[])
-            )
-            """,
-            client_uids,
-        )
-
-        # Treatment plans
-        await conn.execute(
-            "DELETE FROM treatment_plans WHERE client_id = ANY($1::text[])",
-            client_uids,
-        )
-
-        # Encounters
-        await conn.execute(
-            "DELETE FROM encounters WHERE client_id = ANY($1::text[])",
-            client_uids,
-        )
-
-        # Appointments
-        await conn.execute(
-            "DELETE FROM appointments WHERE client_id = ANY($1::text[]) OR clinician_id = ANY($1::text[])",
-            client_uids,
-        )
-
-        # Documents / document packages
-        await conn.execute(
+            TRUNCATE TABLE
+                audit_events,
+                stored_signatures,
+                documents,
+                document_packages,
+                clinical_notes,
+                treatment_plans,
+                encounters,
+                superbills,
+                appointments,
+                clinician_availability,
+                recording_config,
+                authorizations,
+                push_subscriptions,
+                client_invitations,
+                clients,
+                practice_profile,
+                users,
+                clinicians,
+                practices
+            RESTART IDENTITY CASCADE
             """
-            DELETE FROM documents WHERE package_id IN (
-                SELECT id FROM document_packages WHERE client_id = ANY($1::text[])
-            )
-            """,
-            client_uids,
-        )
-        await conn.execute(
-            "DELETE FROM document_packages WHERE client_id = ANY($1::text[])",
-            client_uids,
-        )
-
-        # Stored signatures
-        await conn.execute(
-            "DELETE FROM stored_signatures WHERE user_id = ANY($1::text[])",
-            client_uids,
-        )
-
-        # Clinician availability
-        await conn.execute(
-            "DELETE FROM clinician_availability WHERE clinician_id = ANY($1::text[])",
-            client_uids,
-        )
-
-        # Recording config
-        await conn.execute(
-            "DELETE FROM recording_config WHERE clinician_id = ANY($1::text[])",
-            client_uids,
-        )
-
-        # Practice profile
-        await conn.execute(
-            "DELETE FROM practice_profile WHERE clinician_uid = ANY($1::text[])",
-            client_uids,
-        )
-
-        # Clients
-        await conn.execute(
-            "DELETE FROM clients WHERE firebase_uid = ANY($1::text[])",
-            client_uids,
-        )
-
-        # Audit events (clean up test audit data)
-        await conn.execute(
-            "DELETE FROM audit_events WHERE user_id = ANY($1::text[])",
-            client_uids,
-        )
-
-        # Users
-        await conn.execute(
-            "DELETE FROM users WHERE firebase_uid = ANY($1::text[])",
-            client_uids,
         )
     finally:
         await conn.close()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def cleanup_test_data():
+    """Keep backend tests isolated against the shared local test database."""
+    await _clean_database()
+    yield
+    await _clean_database()
