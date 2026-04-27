@@ -238,7 +238,7 @@ async def generate_treatment_plan(
         return _normalize_plan(content)
 
     except Exception as e:
-        logger.error("Treatment plan generation failed: %s: %s", type(e).__name__, e)
+        logger.error("Treatment plan generation failed: %s", type(e).__name__)
         raise
 
 
@@ -335,7 +335,7 @@ async def update_treatment_plan(
         return _normalize_plan(content)
 
     except Exception as e:
-        logger.error("Treatment plan update failed: %s: %s", type(e).__name__, e)
+        logger.error("Treatment plan update failed: %s", type(e).__name__)
         raise
 
 

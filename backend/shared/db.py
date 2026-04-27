@@ -6,6 +6,7 @@ Requires DATABASE_URL env var (postgresql://...).
 import os
 import logging
 import hashlib
+import hmac
 import re
 
 import asyncpg
@@ -40,8 +41,15 @@ def sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def phone_sha256_for_texting(value: str) -> str:
-    return sha256_hex(normalize_phone_number_for_texting(value))
+def phone_sha256_for_texting(value: str, hash_key: str | None = None) -> str:
+    normalized = normalize_phone_number_for_texting(value)
+    if hash_key:
+        return hmac.new(
+            hash_key.encode("utf-8"),
+            normalized.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+    return sha256_hex(normalized)
 
 
 def _coerce_date(value):
@@ -1932,6 +1940,7 @@ async def opt_out_clients_by_phone_sha256(
     phone_sha256: str,
     source: str = "telnyx_stop",
     updated_by: str = "hosted_texting_webhook",
+    hash_key: str | None = None,
 ) -> list[dict]:
     """Mark clients with the matching normalized phone hash as SMS opted out."""
     pool = await get_pool()
@@ -1941,7 +1950,8 @@ async def opt_out_clients_by_phone_sha256(
     matched = [
         r
         for r in rows
-        if phone_sha256_for_texting(r["phone"]) == phone_sha256
+        if phone_sha256_for_texting(r["phone"], hash_key) == phone_sha256
+        or phone_sha256_for_texting(r["phone"]) == phone_sha256
     ]
     updated: list[dict] = []
     for row in matched:

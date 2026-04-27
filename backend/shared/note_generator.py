@@ -309,7 +309,7 @@ async def generate_note(
         }
 
     except Exception as e:
-        logger.error("Note generation failed: %s: %s", type(e).__name__, e)
+        logger.error("Note generation failed: %s", type(e).__name__)
         raise
 
 

@@ -356,7 +356,7 @@ async def create_journal_entry(
             )
             transcript += f"\n\nAI: {ai_response}"
         except Exception as e:
-            logger.error("Journal AI response failed: %s: %s", type(e).__name__, e)
+            logger.error("Journal AI response failed: %s", type(e).__name__)
 
     encounter_id = await create_encounter(
         client_id=user["uid"],
@@ -477,7 +477,7 @@ async def journal_chat(
             new_message=body.message,
         )
     except Exception as e:
-        logger.error("Journal chat AI failed: %s: %s", type(e).__name__, e)
+        logger.error("Journal chat AI failed: %s", type(e).__name__)
         raise HTTPException(502, "AI response generation failed")
 
     new_transcript = existing_transcript + f"\n\nClient: {body.message}\n\nAI: {ai_response}"
@@ -619,7 +619,7 @@ async def create_journal_from_voice(
             )
             reflection = (response.text or "").strip()
         except Exception as e:
-            logger.error("Voice reflection generation failed: %s: %s", type(e).__name__, e)
+            logger.error("Voice reflection generation failed: %s", type(e).__name__)
             reflection = None
 
         if reflection:
@@ -729,5 +729,5 @@ async def transcribe_dictation(
         return {"transcript": transcript}
 
     except Exception as e:
-        logger.error("Journal transcription failed: %s: %s", type(e).__name__, e)
+        logger.error("Journal transcription failed: %s", type(e).__name__)
         raise HTTPException(502, "Transcription failed")

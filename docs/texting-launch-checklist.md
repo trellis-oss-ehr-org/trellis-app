@@ -15,11 +15,14 @@ practice.
 
 - Deploy `trellis-services` under a Trellis LLC-controlled HTTPS domain.
 - Run all hosted-service migrations.
+- Run dependency audits (`npm audit --omit=dev` and `pip-audit`) before deploy.
 - Set `TEXTING_ALLOWED_RETURN_ORIGINS` to explicit practice app origins.
 - Set Stripe live/test keys through Secret Manager or equivalent, not source.
 - Configure Stripe webhook endpoint `/v1/stripe/webhook`.
 - Configure Telnyx webhook endpoint `/v1/telnyx/webhook`.
 - Configure `TELNYX_PUBLIC_KEY` and verify webhook signatures in staging.
+- Configure a scheduled call to `/v1/maintenance/text-message-logs/purge`
+  with `MAINTENANCE_SECRET`.
 - Enable database backups and restore testing.
 - Enable service logs/alerts without PHI in message bodies or raw phone numbers.
 

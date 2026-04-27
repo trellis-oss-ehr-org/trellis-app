@@ -345,7 +345,7 @@ async def ai_update_treatment_plan(
             original_plan_date=current_plan["created_at"],
         )
     except Exception as e:
-        logger.error("Treatment plan update failed for %s: %s", plan_id, e)
+        logger.error("Treatment plan update failed for %s: %s", plan_id, type(e).__name__)
         # Revert superseded status on failure
         await db_update_treatment_plan(plan_id, status=current_plan["status"])
         raise HTTPException(502, f"Treatment plan update failed: {type(e).__name__}")
@@ -640,7 +640,7 @@ async def sign_plan(
             practice=practice,
         )
     except Exception as e:
-        logger.error("PDF generation failed for treatment plan %s: %s", plan_id, e)
+        logger.error("PDF generation failed for treatment plan %s: %s", plan_id, type(e).__name__)
         pdf_bytes = None
 
     # Sign the plan in the database

@@ -96,5 +96,5 @@ async def extract_insurance_card(
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        logger.error("Failed to parse Gemini response as JSON: %s", text[:200])
+        logger.error("Failed to parse Gemini response as JSON")
         return {}

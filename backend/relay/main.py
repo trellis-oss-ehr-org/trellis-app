@@ -32,16 +32,17 @@ from pathlib import Path as _Path
 _here = _Path(__file__).resolve().parent
 sys.path.insert(0, str(_here.parent / "shared"))  # local dev: backend/shared
 sys.path.insert(0, str(_here / "shared"))          # Docker: /app/shared
+from safe_logging import configure_safe_logging
+
+# Configure PHI-safe logging before shared modules perform any work.
+configure_safe_logging()
+
 from db import close_pool, create_encounter, update_encounter, get_client
 from compaction import trigger_compaction
 from alerts import notify_bd_new_intake
 
 from request_logging import RequestLoggingMiddleware
-from safe_logging import configure_safe_logging
 from security_headers import SecurityHeadersMiddleware
-
-# Configure PHI-safe logging before any other operations
-configure_safe_logging()
 
 logger = logging.getLogger(__name__)
 

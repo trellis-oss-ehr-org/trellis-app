@@ -381,7 +381,7 @@ async def book_appointment(
                 clinician_uid=body.clinician_id,
             )
         except Exception as e:
-            logger.error("Calendar event creation failed: %s", e)
+            logger.error("Calendar event creation failed: %s", type(e).__name__)
             meet_link, event_id = None, None
 
         appt_id = await create_appointment(
@@ -500,13 +500,13 @@ async def patch_appointment(
         try:
             await delete_calendar_event(appt["calendar_event_id"], clinician_email=appt.get("clinician_email", ""), clinician_uid=appt.get("clinician_id"))
         except Exception as e:
-            logger.error("Failed to delete calendar event: %s", e)
+            logger.error("Failed to delete calendar event: %s", type(e).__name__)
 
     if body.status == "completed" and appt.get("calendar_event_id"):
         try:
             await strip_conference_data(appt["calendar_event_id"], clinician_email=appt.get("clinician_email", ""), clinician_uid=appt.get("clinician_id"))
         except Exception as e:
-            logger.error("Failed to strip conference data: %s", e)
+            logger.error("Failed to strip conference data: %s", type(e).__name__)
 
     await update_appointment_status(
         appointment_id, body.status, body.cancelled_reason
@@ -1034,7 +1034,7 @@ async def reconfirmation_cancel(token: str, request: Request):
         try:
             await delete_calendar_event(appt["calendar_event_id"], clinician_email=appt.get("clinician_email", ""), clinician_uid=appt.get("clinician_id"))
         except Exception as e:
-            logger.error("Failed to delete calendar event on reconfirmation cancel: %s", e)
+            logger.error("Failed to delete calendar event on reconfirmation cancel: %s", type(e).__name__)
 
     await record_reconfirmation_response(appt["id"], "cancelled")
     await update_appointment_status(appt["id"], "cancelled", "Skipped via reconfirmation")
@@ -1096,7 +1096,7 @@ async def reconfirmation_change(
         try:
             await delete_calendar_event(appt["calendar_event_id"], clinician_email=appt.get("clinician_email", ""), clinician_uid=appt.get("clinician_id"))
         except Exception as e:
-            logger.error("Failed to delete old calendar event on reschedule: %s", e)
+            logger.error("Failed to delete old calendar event on reschedule: %s", type(e).__name__)
 
     type_info = APPOINTMENT_TYPES.get(appt["type"], {"display": "Session", "cpt": ""})
     summary = f"{type_info['display']} — {appt['client_name']}"
@@ -1112,7 +1112,7 @@ async def reconfirmation_change(
             clinician_uid=appt.get("clinician_id"),
         )
     except Exception as e:
-        logger.error("Calendar event creation failed on reschedule: %s", e)
+        logger.error("Calendar event creation failed on reschedule: %s", type(e).__name__)
         meet_link, event_id = None, None
 
     await reschedule_appointment(
@@ -1167,7 +1167,11 @@ async def cron_check_reconfirmations(
             try:
                 await delete_calendar_event(appt["calendar_event_id"], clinician_email=appt.get("clinician_email", ""), clinician_uid=appt.get("clinician_id"))
             except Exception as e:
-                logger.error("Failed to delete calendar event for expired reconfirmation %s: %s", appt["id"], e)
+                logger.error(
+                    "Failed to delete calendar event for expired reconfirmation %s: %s",
+                    appt["id"],
+                    type(e).__name__,
+                )
 
         # Release the appointment
         await release_appointment(appt["id"])
@@ -1276,7 +1280,7 @@ async def cron_send_reminders(
             )
 
         except Exception as e:
-            logger.error("Failed to send reminder for appointment %s: %s", appt["id"], e)
+            logger.error("Failed to send reminder for appointment %s: %s", appt["id"], type(e).__name__)
             errors += 1
 
     # --- Push notifications (free via FCM) ---
@@ -1317,7 +1321,7 @@ async def cron_send_reminders(
                     metadata={"token_count": len(tokens), "failed_count": len(failed)},
                 )
             except Exception as e:
-                logger.error("Failed to send push reminder for appointment %s: %s", appt["id"], e)
+                logger.error("Failed to send push reminder for appointment %s: %s", appt["id"], type(e).__name__)
 
     # --- Paid SMS reminders (hosted add-on) ---
     text_candidates = await get_text_reminder_candidates(hours_ahead=24)
@@ -1379,7 +1383,7 @@ async def cron_check_no_shows(
             try:
                 await strip_conference_data(appt["calendar_event_id"], clinician_email=appt.get("clinician_email", ""), clinician_uid=appt.get("clinician_id"))
             except Exception as e:
-                logger.error("Failed to strip conference data for no-show %s: %s", appt["id"], e)
+                logger.error("Failed to strip conference data for no-show %s: %s", appt["id"], type(e).__name__)
 
         await log_audit_event(
             user_id=None,

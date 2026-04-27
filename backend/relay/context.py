@@ -116,7 +116,7 @@ async def compress_context(text: str) -> str:
         return f"--- Compressed Client Profile ---\n{result}"
 
     except Exception as e:
-        logger.error("Compression failed: %s: %s — falling back to truncation", type(e).__name__, e)
+        logger.error("Compression failed: %s — falling back to truncation", type(e).__name__)
         return _truncate_context(text)
 
 

@@ -1,4 +1,4 @@
-.PHONY: dev dev-frontend dev-api dev-relay install db-up db-wait db-migrate db-reset db-down test-build test-backend test-backend-existing-db test-e2e test-all
+.PHONY: dev dev-frontend dev-api dev-relay install db-up db-wait db-migrate db-reset db-down test-build test-backend test-backend-existing-db test-e2e audit-deps test-all
 
 COMPOSE ?= docker compose
 TEST_DATABASE_URL ?= postgresql://postgres:password@localhost:5432/trellis_test
@@ -82,6 +82,12 @@ test-backend-existing-db:
 # Run Playwright E2E tests (requires services running)
 test-e2e:
 	cd frontend && npx playwright test --reporter=list
+
+# Audit dependency manifests. Requires `pip install pip-audit`.
+audit-deps:
+	cd frontend && npm audit --omit=dev
+	cd backend/api && python -m pip_audit -r requirements.txt
+	cd backend/relay && python -m pip_audit -r requirements.txt
 
 # Run all tests
 test-all: test-build test-backend test-e2e

@@ -89,7 +89,7 @@ def _load_icd10_codes() -> list[dict]:
             _ICD10_CODES = json.load(f)
         logger.info("Loaded %d ICD-10 codes from %s", len(_ICD10_CODES), data_path)
     except Exception as e:
-        logger.error("Failed to load ICD-10 codes: %s", e)
+        logger.error("Failed to load ICD-10 codes: %s", type(e).__name__)
         _ICD10_CODES = []
     return _ICD10_CODES
 
@@ -360,7 +360,7 @@ async def generate_superbill_for_note(
             signature_data=signature_data,
         )
     except Exception as e:
-        logger.error("Superbill PDF generation failed for note %s: %s", note_id, e)
+        logger.error("Superbill PDF generation failed for note %s: %s", note_id, type(e).__name__)
         pdf_bytes = None
 
     # Look up active authorization for this client/CPT code
@@ -379,7 +379,7 @@ async def generate_superbill_for_note(
             auth_warning = f"No active authorization found for client with payer {insurance_payer}"
             logger.warning("Superbill generation: %s (note=%s)", auth_warning, note_id)
     except Exception as e:
-        logger.error("Authorization lookup failed for note %s: %s", note_id, e)
+        logger.error("Authorization lookup failed for note %s: %s", note_id, type(e).__name__)
 
     # Resolve billing NPI: group practice NPI takes precedence, otherwise
     # fall back to the individual clinician NPI.
@@ -1255,7 +1255,7 @@ async def download_cms1500_pdf(
             signature_data=signature,
         )
     except Exception as e:
-        logger.error("CMS-1500 PDF generation failed for superbill %s: %s", superbill_id, e)
+        logger.error("CMS-1500 PDF generation failed for superbill %s: %s", superbill_id, type(e).__name__)
         raise HTTPException(500, "Failed to generate CMS-1500 PDF")
 
     await log_audit_event(
@@ -1357,7 +1357,7 @@ async def download_edi837(
             clinician=clinician,
         )
     except Exception as e:
-        logger.error("837P generation failed for superbill %s: %s", superbill_id, e)
+        logger.error("837P generation failed for superbill %s: %s", superbill_id, type(e).__name__)
         raise HTTPException(500, "Failed to generate 837P EDI file")
 
     await log_audit_event(
@@ -1427,7 +1427,7 @@ async def download_batch_edi837(
     try:
         edi_content = generate_837p_batch(claims)
     except Exception as e:
-        logger.error("Batch 837P generation failed: %s", e)
+        logger.error("Batch 837P generation failed: %s", type(e).__name__)
         raise HTTPException(500, "Failed to generate batch 837P EDI file")
 
     await log_audit_event(

@@ -433,10 +433,10 @@ def extract_intake_data(transcript: str) -> dict | None:
             return None
         return parsed
     except (json.JSONDecodeError, TypeError, ValueError) as e:
-        logger.error("Failed to parse extraction result: %s: %s", type(e).__name__, e)
+        logger.error("Failed to parse extraction result: %s", type(e).__name__)
         return None
     except Exception as e:
-        logger.error("Extraction API call failed: %s: %s", type(e).__name__, e)
+        logger.error("Extraction API call failed: %s", type(e).__name__)
         return None
 
 
@@ -984,7 +984,7 @@ async def run_voice_session(
                                 return
 
             except Exception as e:
-                logger.error("Gemini receive error: %s: %s", type(e).__name__, e)
+                logger.error("Gemini receive error: %s", type(e).__name__)
             finally:
                 session_active_ref[0] = False
 
@@ -1031,7 +1031,7 @@ async def run_voice_session(
             except WebSocketDisconnect:
                 logger.info("Browser WebSocketDisconnect")
             except Exception as e:
-                logger.error("Send loop error: %s: %s", type(e).__name__, e)
+                logger.error("Send loop error: %s", type(e).__name__)
             finally:
                 session_active_ref[0] = False
 

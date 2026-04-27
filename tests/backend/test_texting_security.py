@@ -119,6 +119,20 @@ def test_texting_consent_allows_consented_client_with_phone():
     )
 
 
+def test_local_texting_enabled_requires_telnyx_ready():
+    conn = {
+        "baa_status": "signed",
+        "shared_number_attestation_status": "accepted",
+        "subscription_status": "active",
+        "telnyx_status": "not_configured",
+        "credential_secret": "encrypted-secret",
+    }
+
+    assert not texting._local_texting_enabled(conn)
+    conn["telnyx_status"] = "ready"
+    assert texting._local_texting_enabled(conn)
+
+
 async def test_update_texting_consent_endpoint(client):
     await client.post(
         "/api/auth/register",
@@ -205,7 +219,10 @@ async def test_hosted_stop_webhook_opts_out_matching_client(client):
     payload = {
         "event_type": "sms_opt_out",
         "install_id": conn["install_id"],
-        "phone_sha256": phone_sha256_for_texting("+15551234567"),
+        "phone_sha256": phone_sha256_for_texting(
+            "+15551234567",
+            texting._install_callback_secret_hash(conn),
+        ),
         "provider_event_id": "telnyx-event-1",
         "occurred_at": "2026-04-27T12:00:00Z",
     }

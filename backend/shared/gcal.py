@@ -166,7 +166,7 @@ async def get_calendar_event(
         event = service.events().get(calendarId="primary", eventId=event_id).execute()
         return event
     except Exception as e:
-        logger.error("Failed to get calendar event %s: %s", event_id, e)
+        logger.error("Failed to get calendar event %s: %s", event_id, type(e).__name__)
         return None
 
 
@@ -196,7 +196,7 @@ async def strip_conference_data(
         logger.info("Stripped conferenceData from event %s", event_id)
         return True
     except Exception as e:
-        logger.error("Failed to strip conferenceData from event %s: %s", event_id, e)
+        logger.error("Failed to strip conferenceData from event %s: %s", event_id, type(e).__name__)
         return False
 
 
@@ -246,7 +246,7 @@ async def list_recent_recordings(
         logger.info("Found %d recent recording(s) in Drive", len(files))
         return files
     except Exception as e:
-        logger.error("Failed to list Drive recordings: %s", e)
+        logger.error("Failed to list Drive recordings: %s", type(e).__name__)
         return []
 
 
@@ -264,7 +264,7 @@ async def get_recording_file(
             fields="id, name, mimeType, createdTime, webViewLink, parents, size, properties",
         ).execute()
     except Exception as e:
-        logger.error("Failed to get Drive file %s: %s", file_id, e)
+        logger.error("Failed to get Drive file %s: %s", file_id, type(e).__name__)
         return None
 
 
@@ -300,7 +300,7 @@ async def download_recording(
         buffer.seek(0)
         return buffer.read(), mime_type
     except Exception as e:
-        logger.error("Failed to download recording %s: %s", file_id, e)
+        logger.error("Failed to download recording %s: %s", file_id, type(e).__name__)
         return None
 
 
@@ -320,7 +320,7 @@ async def delete_drive_file(
         logger.info("Deleted Drive file: %s", file_id)
         return True
     except Exception as e:
-        logger.error("Failed to delete Drive file %s: %s", file_id, e)
+        logger.error("Failed to delete Drive file %s: %s", file_id, type(e).__name__)
         return False
 
 

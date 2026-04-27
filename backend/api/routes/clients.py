@@ -340,7 +340,7 @@ async def extract_card(
             back_b64=payload.back,
         )
     except Exception as e:
-        logger.error("Insurance card extraction failed: %s: %s", type(e).__name__, e)
+        logger.error("Insurance card extraction failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=502,
             detail="We couldn't read your insurance card. Please try again or enter your information manually.",

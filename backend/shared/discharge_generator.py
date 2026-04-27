@@ -364,5 +364,5 @@ async def generate_discharge_summary(
         }
 
     except Exception as e:
-        logger.error("Discharge summary generation failed: %s: %s", type(e).__name__, e)
+        logger.error("Discharge summary generation failed: %s", type(e).__name__)
         raise

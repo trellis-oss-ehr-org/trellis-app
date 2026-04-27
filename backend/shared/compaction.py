@@ -259,7 +259,7 @@ async def _run_compaction(
         return result
 
     except Exception as e:
-        logger.error("Compaction failed: %s: %s", type(e).__name__, e)
+        logger.error("Compaction failed: %s", type(e).__name__)
         return existing_summary or ""
 
 

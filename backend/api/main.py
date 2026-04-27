@@ -7,13 +7,17 @@ _here = _Path(__file__).resolve().parent
 sys.path.insert(0, str(_here / "shared"))          # Docker: /app/shared
 sys.path.insert(0, str(_here.parent / "shared"))  # local dev: backend/shared
 
+from safe_logging import configure_safe_logging
+
+# Configure PHI-safe logging before route modules are imported.
+configure_safe_logging()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import ALLOWED_ORIGINS, API_DOCS_ENABLED
 from db import close_pool
 from request_logging import RequestLoggingMiddleware
-from safe_logging import configure_safe_logging
 from security_headers import SecurityHeadersMiddleware
 from routes.intake import router as intake_router
 from routes.documents import router as documents_router
@@ -32,9 +36,6 @@ from routes.google_oauth import router as google_oauth_router
 from routes.push import router as push_router
 from routes.journal import router as journal_router
 from routes.texting import router as texting_router
-
-# Configure PHI-safe logging before any other operations
-configure_safe_logging()
 
 app = FastAPI(
     title="Trellis EHR API",

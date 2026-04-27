@@ -405,7 +405,7 @@ async def assistant_chat(
     try:
         context_data = await _query_relevant_data(body.message, clinician_uid=clinician_filter)
     except Exception as e:
-        logger.error("Assistant DB query failed: %s", e)
+        logger.error("Assistant DB query failed: %s", type(e).__name__)
         context_data = {"error": "Failed to query practice data"}
 
     # Build the prompt with context
@@ -446,7 +446,7 @@ Answer the clinician's question using ONLY the data provided above. If the data 
         )
         answer = response.text
     except Exception as e:
-        logger.error("Assistant generation failed: %s: %s", type(e).__name__, e)
+        logger.error("Assistant generation failed: %s", type(e).__name__)
         raise HTTPException(502, f"Assistant generation failed: {type(e).__name__}")
 
     await log_audit_event(

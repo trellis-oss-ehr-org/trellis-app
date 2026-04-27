@@ -425,7 +425,7 @@ async def generate_note_from_dictation_endpoint(
         content = result["content"]
         chosen_format = result["format"]
     except Exception as e:
-        logger.error("Dictation note generation failed: %s", e)
+        logger.error("Dictation note generation failed: %s", type(e).__name__)
         # Fallback: create blank note so clinician can still edit manually
         if body.format == "SOAP":
             content = {"subjective": "", "objective": "", "assessment": "", "plan": ""}
@@ -557,7 +557,7 @@ async def generate_clinical_note(
                 treatment_plan=treatment_plan,
             )
     except Exception as e:
-        logger.error("Note generation failed for encounter %s: %s", body.encounter_id, e)
+        logger.error("Note generation failed for encounter %s: %s", body.encounter_id, type(e).__name__)
         raise HTTPException(502, f"Note generation failed: {type(e).__name__}")
 
     note_format = result["format"]
@@ -832,7 +832,7 @@ async def sign_note(
             practice=practice,
         )
     except Exception as e:
-        logger.error("PDF generation failed for note %s: %s", note_id, e)
+        logger.error("PDF generation failed for note %s: %s", note_id, type(e).__name__)
         # Sign the note even if PDF fails -- we can regenerate the PDF later
         pdf_bytes = None
 

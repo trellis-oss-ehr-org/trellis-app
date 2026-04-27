@@ -187,6 +187,7 @@ def _local_texting_enabled(conn: dict) -> bool:
         conn["baa_status"] == "signed"
         and conn.get("shared_number_attestation_status") == "accepted"
         and conn["subscription_status"] in {"active", "trialing"}
+        and conn["telnyx_status"] == "ready"
         and bool(conn["credential_secret"])
     )
 
@@ -287,6 +288,7 @@ async def hosted_texting_webhook(request: Request):
         payload.phone_sha256,
         source="telnyx_stop",
         updated_by="hosted_texting_webhook",
+        hash_key=_install_callback_secret_hash(conn),
     )
     await log_audit_event(
         user_id=None,
@@ -459,7 +461,7 @@ async def texting_billing_portal(user: dict = Depends(require_practice_member("o
 async def _send_text_to_service(
     conn: dict,
     to_number: str,
-    message_body: str,
+    scheduled_at: str,
     install_message_id: str,
 ) -> dict:
     service_url = _service_url()
@@ -474,9 +476,9 @@ async def _send_text_to_service(
             json={
                 "install_id": conn["install_id"],
                 "to_number": to_number,
-                "body": message_body,
+                "template": "appointment_reminder",
+                "template_params": {"scheduled_at": scheduled_at},
                 "install_message_id": install_message_id,
-                "metadata": {"template": "appointment_reminder"},
             },
         )
     if resp.status_code >= 400:
@@ -501,12 +503,11 @@ async def send_appointment_reminder_text(
     if not _local_texting_enabled(conn):
         raise HTTPException(402, "Texting is not connected")
 
-    message_body = _build_appointment_reminder_sms(appt["scheduled_at"])
     install_message_id = f"appointment:{appt['id']}:reminder24h"
     return await _send_text_to_service(
         conn,
         to_number=normalize_phone_number_for_texting(client["phone"]),
-        message_body=message_body,
+        scheduled_at=appt["scheduled_at"],
         install_message_id=install_message_id,
     )
 
