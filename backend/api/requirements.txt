@@ -10,6 +10,6 @@ google-cloud-storage==2.19.0
 google-api-python-client==2.155.0
 google-auth>=2.35.0,<3
 fpdf2==2.8.5
-httpx==0.27.2
+httpx==0.28.1
 cryptography>=42.0,<47
 python-multipart==0.0.22
