@@ -31,6 +31,7 @@ import os
 import sys
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -66,6 +67,14 @@ from patient_statement_pdf import generate_patient_statement
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        UUID(value)
+        return True
+    except ValueError:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -2206,17 +2215,47 @@ async def email_statement(
 async def get_client_balance(
     client_id: str,
     request: Request,
-    user: dict = Depends(require_practice_member("owner")),
+    user: dict = Depends(get_current_user_with_role),
 ):
     """Get the billing balance for a client.
 
     Computes balance from superbills (total fees minus total payments).
     """
-    client = await get_client_by_id(client_id)
+    client = await get_client_by_id(client_id) if _is_uuid(client_id) else await get_client(client_id)
     if not client:
         raise HTTPException(404, "Client not found")
 
-    await enforce_clinician_owns_client(user, client["firebase_uid"])
+    if user.get("role") == "client":
+        enforce_client_owns_resource(user, client["firebase_uid"])
+    elif user.get("role") == "clinician":
+        clinician = await get_clinician(user["uid"])
+        if not clinician or clinician.get("status") != "active":
+            raise HTTPException(403, "Active clinician practice membership required")
+
+        user["clinician"] = clinician
+        user["practice_id"] = clinician["practice_id"]
+
+        if is_owner(user):
+            pool = await get_pool()
+            belongs = await pool.fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM clients c
+                    JOIN clinicians cl ON cl.firebase_uid = c.primary_clinician_id
+                    WHERE c.firebase_uid = $1
+                      AND cl.practice_id = $2::uuid
+                )
+                """,
+                client["firebase_uid"],
+                clinician["practice_id"],
+            )
+            if not belongs:
+                raise HTTPException(403, "Access denied")
+        else:
+            await enforce_clinician_owns_client(user, client["firebase_uid"])
+    else:
+        raise HTTPException(403, "Access denied")
 
     pool = await get_pool()
     row = await pool.fetchrow(

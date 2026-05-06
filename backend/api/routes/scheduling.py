@@ -125,6 +125,59 @@ async def _ensure_can_mutate_appointment(user: dict, appt: dict) -> None:
         )
 
 
+async def _resolve_bookable_participants(user: dict, body) -> dict:
+    """Resolve trusted client/clinician fields for appointment creation."""
+    client_record = await get_client(body.client_id)
+    if not client_record:
+        raise HTTPException(404, "Client not found")
+
+    target_clinician_id = body.clinician_id
+    caller_clinician = None
+
+    if not is_clinician(user):
+        enforce_client_owns_resource(user, body.client_id)
+        if not target_clinician_id:
+            target_clinician_id = client_record.get("primary_clinician_id")
+    else:
+        caller_clinician = await get_clinician(user["uid"])
+        if not caller_clinician or caller_clinician.get("status") != "active":
+            raise HTTPException(403, "Active clinician practice membership required")
+
+        if not is_owner({"clinician": caller_clinician}):
+            if client_record.get("primary_clinician_id") != user["uid"]:
+                raise HTTPException(403, "Access denied")
+            if body.clinician_id != user["uid"]:
+                raise HTTPException(403, "Clinicians can only book appointments for themselves")
+
+    target_clinician = await get_clinician(target_clinician_id)
+    if not target_clinician or target_clinician.get("status") != "active":
+        raise HTTPException(404, "Clinician not found")
+
+    primary_clinician = await get_clinician(client_record.get("primary_clinician_id"))
+    if not primary_clinician or primary_clinician.get("status") != "active":
+        raise HTTPException(403, "Client is not assigned to an active clinician")
+
+    if target_clinician["practice_id"] != primary_clinician["practice_id"]:
+        raise HTTPException(403, "Client and clinician are not in the same practice")
+
+    if caller_clinician and target_clinician["practice_id"] != caller_clinician["practice_id"]:
+        raise HTTPException(403, "Access denied")
+
+    client_email = client_record.get("email") or body.client_email
+    client_name = client_record.get("full_name") or client_record.get("preferred_name") or body.client_name
+    clinician_email = target_clinician.get("google_email") or target_clinician.get("email") or body.clinician_email
+
+    return {
+        "client_id": client_record["firebase_uid"],
+        "client_email": client_email,
+        "client_name": client_name,
+        "client_record": client_record,
+        "clinician_id": target_clinician["firebase_uid"],
+        "clinician_email": clinician_email,
+        "clinician_record": target_clinician,
+    }
+
+
 def _verify_cron_secret(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")) -> None:
     """Verify the shared secret for cron endpoints.
 
@@ -337,9 +390,7 @@ async def book_appointment(
     if body.cadence is not None and body.cadence not in ("weekly", "biweekly", "monthly"):
         raise HTTPException(400, "Cadence must be 'weekly', 'biweekly', or 'monthly'")
 
-    # Clients can only book appointments for themselves
-    if not is_clinician(user) and body.client_id != user["uid"]:
-        raise HTTPException(403, "Clients can only book appointments for themselves")
+    participant = await _resolve_bookable_participants(user, body)
 
     # Assessment is always single. Individual types: single if no cadence, 4 recurring if cadence provided.
     if body.type == "assessment" or body.cadence is None:
@@ -352,7 +403,7 @@ async def book_appointment(
     modality = body.modality
     if not modality:
         try:
-            client_record = await get_client(body.client_id)
+            client_record = participant["client_record"]
             if client_record:
                 modality = client_record.get("default_modality") or "telehealth"
         except Exception:
@@ -368,28 +419,28 @@ async def book_appointment(
         appt_dt = scheduled + _cadence_timedelta(body.cadence, i)
         end_dt = appt_dt + timedelta(minutes=body.duration_minutes)
 
-        summary = f"{type_info['display']} — {body.client_name}"
+        summary = f"{type_info['display']} — {participant['client_name']}"
 
         try:
             meet_link, event_id = await create_calendar_event(
                 summary=summary,
                 start_dt=appt_dt.isoformat(),
                 end_dt=end_dt.isoformat(),
-                attendee_emails=[body.client_email, body.clinician_email],
-                description=f"Type: {body.type} (CPT {type_info['cpt']})\nClient: {body.client_name}",
-                clinician_email=body.clinician_email,
-                clinician_uid=body.clinician_id,
+                attendee_emails=[participant["client_email"], participant["clinician_email"]],
+                description=f"Type: {body.type} (CPT {type_info['cpt']})\nClient: {participant['client_name']}",
+                clinician_email=participant["clinician_email"],
+                clinician_uid=participant["clinician_id"],
             )
         except Exception as e:
             logger.error("Calendar event creation failed: %s", type(e).__name__)
             meet_link, event_id = None, None
 
         appt_id = await create_appointment(
-            client_id=body.client_id,
-            client_email=body.client_email,
-            client_name=body.client_name,
-            clinician_id=body.clinician_id,
-            clinician_email=body.clinician_email,
+            client_id=participant["client_id"],
+            client_email=participant["client_email"],
+            client_name=participant["client_name"],
+            clinician_id=participant["clinician_id"],
+            clinician_email=participant["clinician_email"],
             appt_type=body.type,
             scheduled_at=appt_dt.isoformat(),
             duration_minutes=body.duration_minutes,
@@ -404,6 +455,8 @@ async def book_appointment(
             "id": appt_id,
             "scheduled_at": appt_dt.isoformat(),
             "meet_link": meet_link,
+            "calendar_event_id": event_id,
+            "calendar_event_created": event_id is not None,
             "type": body.type,
             "cpt": type_info["cpt"],
             "modality": modality,
@@ -430,9 +483,9 @@ async def book_appointment(
     if body.type == "assessment":
         consent_package_id = await auto_generate_consent_package(
             client_id=body.client_id,
-            client_email=body.client_email,
-            client_name=body.client_name,
-            clinician_uid=body.clinician_id,
+            client_email=participant["client_email"],
+            client_name=participant["client_name"],
+            clinician_uid=participant["clinician_id"],
         )
         if consent_package_id:
             logger.info(

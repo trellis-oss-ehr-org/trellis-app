@@ -128,6 +128,17 @@ async def _ensure_user_can_access_client(user: dict, client_id: str | None) -> s
     return None
 
 
+async def _try_send_email(context: str, **kwargs) -> tuple[bool, str | None]:
+    """Send email without letting transport configuration failures become 500s."""
+    try:
+        await send_email(**kwargs)
+        return True, None
+    except Exception as e:
+        error_name = type(e).__name__
+        logger.warning("%s email delivery failed: %s", context, error_name)
+        return False, error_name
+
+
 # ---------------------------------------------------------------------------
 # Content builders per template key
 # ---------------------------------------------------------------------------
@@ -230,6 +241,23 @@ async def auto_generate_consent_package(
             logger.warning("Skipped consent package generation: client is outside clinician practice")
             return None
 
+        status = await get_client_document_signing_status(
+            client_id,
+            practice_id=clinician["practice_id"],
+        )
+        pending_packages = [
+            p for p in (status.get("packages") or [])
+            if p.get("pending", 0) > 0
+            and p.get("status") in ("draft", "sent", "partially_signed")
+        ]
+        if pending_packages:
+            existing_package_id = pending_packages[0]["package_id"]
+            logger.info(
+                "Skipped consent package generation; pending package already exists: %s",
+                existing_package_id,
+            )
+            return existing_package_id
+
         # Load client profile for template population
         client_data = await get_client(client_id)
 
@@ -322,7 +350,8 @@ Please complete these documents before your appointment. If you have questions, 
 — {practice_name}
 """
 
-        await send_email(
+        email_sent, email_error = await _try_send_email(
+            "auto consent package",
             to=client_email,
             subject=f"Documents Ready for Signing — {practice_name}",
             html_body=html,
@@ -341,6 +370,8 @@ Please complete these documents before your appointment. If you have questions, 
                 "client_id": client_id,
                 "document_count": doc_count,
                 "trigger": "assessment_booking",
+                "email_sent": email_sent,
+                "email_error": email_error,
             },
         )
 
@@ -511,13 +542,29 @@ If you have questions, please contact your care coordinator.
 — {practice_name}
 """
 
-    await send_email(
+    email_sent, email_error = await _try_send_email(
+        "document package send",
         to=pkg["client_email"],
         subject=f"Documents Ready for Signing — {practice_name}",
         html_body=html,
         text_body=text,
         clinician_uid=user["uid"],
     )
+
+    if not email_sent:
+        await log_audit_event(
+            user_id=user["uid"],
+            action="email_failed",
+            resource_type="package",
+            resource_id=package_id,
+            ip_address=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            metadata={"email_error": email_error},
+        )
+        raise HTTPException(
+            503,
+            "Email delivery is not configured. Connect a Google account and try again.",
+        )
 
     await update_package_status(package_id, "sent")
 
@@ -557,6 +604,8 @@ async def get_package(
 
     if user.get("role") == "client":
         enforce_client_owns_resource(user, pkg.get("client_id"))
+        if pkg.get("status") == "draft":
+            raise HTTPException(404, "Package not found")
 
     await log_audit_event(
         user_id=user["uid"],
@@ -690,7 +739,11 @@ async def get_client_doc_status(
     """
     practice_id = await _ensure_user_can_access_client(user, client_id)
 
-    status = await get_client_document_signing_status(client_id, practice_id=practice_id)
+    status = await get_client_document_signing_status(
+        client_id,
+        practice_id=practice_id,
+        include_draft=False,
+    )
 
     await log_audit_event(
         user_id=user["uid"],
@@ -751,6 +804,7 @@ async def send_docs_reminder(
     status = await get_client_document_signing_status(
         client_id,
         practice_id=user["practice_id"],
+        include_draft=False,
     )
     pending_packages = [p for p in (status.get("packages") or []) if p["pending"] > 0]
 
@@ -808,13 +862,29 @@ Review & Sign: {signing_url}
 — {practice_name}
 """
 
-    await send_email(
+    email_sent, email_error = await _try_send_email(
+        "document reminder",
         to=client_email,
         subject=f"Reminder: Documents Awaiting Your Signature — {practice_name}",
         html_body=html,
         text_body=text,
         clinician_uid=user["uid"],
     )
+
+    if not email_sent:
+        await log_audit_event(
+            user_id=user["uid"],
+            action="email_failed_docs_reminder",
+            resource_type="client",
+            resource_id=client_id,
+            ip_address=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            metadata={"pending_count": pending_count, "email_error": email_error},
+        )
+        raise HTTPException(
+            503,
+            "Email delivery is not configured. Connect a Google account and try again.",
+        )
 
     await log_audit_event(
         user_id=user["uid"],

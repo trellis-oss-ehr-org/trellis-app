@@ -172,6 +172,29 @@ async def test_client_cannot_book_for_another(client):
     assert resp.status_code == 403
 
 
+async def test_non_owner_clinician_cannot_book_unassigned_client(client):
+    """Non-owner clinicians cannot schedule another clinician's assigned client."""
+    await _register_owner_client_and_second_clinician(client)
+    scheduled = (datetime.now() + timedelta(days=7)).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    ).isoformat()
+    resp = await client.post(
+        "/api/appointments",
+        json={
+            "client_id": "test-client-1",
+            "client_email": "client@example.com",
+            "client_name": "Assigned Client",
+            "clinician_id": "test-clinician-2",
+            "clinician_email": "clinician2@example.com",
+            "type": "assessment",
+            "scheduled_at": scheduled,
+            "duration_minutes": 60,
+        },
+        headers=clinician2_headers(),
+    )
+    assert resp.status_code == 403
+
+
 async def test_non_owner_clinician_cannot_update_unassigned_client(client):
     """Non-owner clinicians cannot mutate clients assigned to someone else."""
     await _register_owner_client_and_second_clinician(client)

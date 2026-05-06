@@ -10,6 +10,14 @@ Primary references:
 - HHS minimum necessary guidance: https://www.hhs.gov/hipaa/for-professionals/privacy/guidance/minimum-necessary-requirement/index.html
 - HHS Breach Notification Rule: https://www.hhs.gov/hipaa/for-professionals/breach-notification/index.html
 
+For Codex-assisted review, use
+[`docs/agents/hipaa-audit-agent.md`](agents/hipaa-audit-agent.md). The agent
+prompt is designed to gather implementation evidence, identify gaps, and avoid
+printing secrets or PHI.
+
+For self-hosting practice responsibilities, read
+[`docs/hipaa-self-hosting-responsibilities.md`](hipaa-self-hosting-responsibilities.md).
+
 ## Implemented Engineering Safeguards
 
 - Firebase ID token verification is required outside explicit local `DEV_MODE`.

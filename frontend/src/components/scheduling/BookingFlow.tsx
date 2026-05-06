@@ -11,11 +11,23 @@ const APPT_TYPES = [
 
 type ApptType = (typeof APPT_TYPES)[number]["value"];
 
+interface BookingResult {
+  appointments?: {
+    id: string;
+    scheduled_at: string;
+    meet_link?: string | null;
+    calendar_event_id?: string | null;
+    calendar_event_created?: boolean;
+  }[];
+}
+
 interface ClientOption {
   id: string;
   firebase_uid: string;
-  first_name: string;
-  last_name: string;
+  full_name?: string | null;
+  preferred_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   email: string;
   status: string;
 }
@@ -30,7 +42,7 @@ interface BookingFlowProps {
     type: string;
     scheduled_at: string;
     duration_minutes: number;
-  }) => Promise<void>;
+  }) => Promise<BookingResult | void>;
   /** Pre-fill clinician info (skips clinician entry step) */
   clinicianId?: string;
   clinicianEmail?: string;
@@ -47,6 +59,15 @@ interface BookingFlowProps {
 }
 
 type Step = "client" | "type" | "slots" | "confirm";
+
+function clientDisplayName(client: ClientOption): string {
+  const legacyName = [client.first_name, client.last_name].filter(Boolean).join(" ").trim();
+  return client.full_name || client.preferred_name || legacyName || client.email;
+}
+
+function clientInitial(client: ClientOption): string {
+  return clientDisplayName(client).charAt(0).toUpperCase() || "?";
+}
 
 export function BookingFlow({
   onBook,
@@ -69,7 +90,7 @@ export function BookingFlow({
   const [clinicianEmail] = useState(prefilledClinicianEmail || "");
   const [selectedClient, setSelectedClient] = useState<ClientOption | null>(
     hasPrefilledClient
-      ? { id: "", firebase_uid: prefilledClientId!, first_name: prefilledClientName?.split(" ")[0] || "", last_name: prefilledClientName?.split(" ").slice(1).join(" ") || "", email: prefilledClientEmail!, status: "active" }
+      ? { id: "", firebase_uid: prefilledClientId!, full_name: prefilledClientName || null, email: prefilledClientEmail!, status: "active" }
       : null,
   );
   const [clients, setClients] = useState<ClientOption[]>([]);
@@ -82,6 +103,7 @@ export function BookingFlow({
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [calendarCreated, setCalendarCreated] = useState(false);
 
   const typeInfo = APPT_TYPES.find((t) => t.value === apptType)!;
 
@@ -100,7 +122,7 @@ export function BookingFlow({
     const q = clientSearch.toLowerCase();
     return clients.filter(
       (c) =>
-        `${c.first_name} ${c.last_name}`.toLowerCase().includes(q) ||
+        clientDisplayName(c).toLowerCase().includes(q) ||
         c.email.toLowerCase().includes(q),
     );
   }, [clients, clientSearch]);
@@ -148,16 +170,19 @@ export function BookingFlow({
     setBooking(true);
     setError("");
     try {
-      await onBook({
+      const result = await onBook({
         clinician_id: clinicianId,
         clinician_email: clinicianEmail,
         client_id: selectedClient.firebase_uid || prefilledClientId || "",
         client_email: selectedClient.email || prefilledClientEmail || "",
-        client_name: `${selectedClient.first_name} ${selectedClient.last_name}`.trim() || prefilledClientName || "",
+        client_name: clientDisplayName(selectedClient) || prefilledClientName || "",
         type: apptType,
         scheduled_at: selectedSlot.start,
         duration_minutes: typeInfo.duration,
       });
+      setCalendarCreated(
+        Boolean(result?.appointments?.some((a) => a.calendar_event_created || a.calendar_event_id || a.meet_link)),
+      );
       setSuccess(true);
     } catch (err: any) {
       setError(err.message);
@@ -171,6 +196,7 @@ export function BookingFlow({
     setSelectedSlot(null);
     setSlots([]);
     setSuccess(false);
+    setCalendarCreated(false);
     setApptType("assessment");
     if (!hasPrefilledClient) {
       setSelectedClient(null);
@@ -190,7 +216,11 @@ export function BookingFlow({
         <p className="text-warm-500 mb-1">
           Your {typeInfo.label.toLowerCase()} has been scheduled.
         </p>
-        <p className="text-sm text-warm-400">Calendar invites have been sent to all participants.</p>
+        <p className="text-sm text-warm-400">
+          {calendarCreated
+            ? "Calendar event created for the participants."
+            : "Calendar event was not created. Connect Google Calendar to enable invites and Meet links."}
+        </p>
         <Button
           variant="outline"
           size="sm"
@@ -274,12 +304,12 @@ export function BookingFlow({
                     >
                       <div className="w-9 h-9 bg-teal-50 rounded-full flex items-center justify-center shrink-0">
                         <span className="text-sm font-semibold text-teal-600">
-                          {c.first_name?.charAt(0).toUpperCase() || "?"}
+                          {clientInitial(c)}
                         </span>
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-warm-800 truncate">
-                          {c.first_name} {c.last_name}
+                          {clientDisplayName(c)}
                         </p>
                         <p className="text-xs text-warm-500 truncate">{c.email}</p>
                       </div>
@@ -302,7 +332,7 @@ export function BookingFlow({
             <div className="bg-warm-50 rounded-lg px-4 py-3 mb-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-warm-800">
-                  {selectedClient.first_name} {selectedClient.last_name}
+                  {clientDisplayName(selectedClient)}
                 </p>
                 <p className="text-xs text-warm-500">{selectedClient.email}</p>
               </div>
@@ -434,7 +464,7 @@ export function BookingFlow({
             <div className="flex justify-between text-sm">
               <span className="text-warm-500">Client</span>
               <span className="font-medium text-warm-800">
-                {selectedClient.first_name} {selectedClient.last_name}
+                {clientDisplayName(selectedClient)}
               </span>
             </div>
             <div className="flex justify-between text-sm">

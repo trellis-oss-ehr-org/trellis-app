@@ -38,6 +38,7 @@ from db import (
     get_clinician,
     get_clinician_by_email,
     create_practice,
+    PracticeAlreadyExistsError,
     create_clinician,
     activate_clinician,
     deactivate_clinician,
@@ -277,10 +278,16 @@ async def register_user(
             )
         else:
             # No invitation — create a new solo practice + owner clinician
-            practice_id = await create_practice(
-                name=body.display_name or "My Practice",
-                practice_type="solo",
-            )
+            try:
+                practice_id = await create_practice(
+                    name=body.display_name or "My Practice",
+                    practice_type="solo",
+                )
+            except PracticeAlreadyExistsError:
+                raise HTTPException(
+                    409,
+                    "This Trellis install already has a practice. Clinicians must be invited by the practice owner.",
+                )
             await create_clinician(
                 practice_id=practice_id,
                 firebase_uid=user["uid"],
@@ -476,10 +483,16 @@ async def switch_role(
     if body.new_role == "clinician":
         email = user.get("email", "")
         display_name = user_record.get("display_name")
-        practice_id = await create_practice(
-            name=display_name or "My Practice",
-            practice_type="solo",
-        )
+        try:
+            practice_id = await create_practice(
+                name=display_name or "My Practice",
+                practice_type="solo",
+            )
+        except PracticeAlreadyExistsError:
+            raise HTTPException(
+                409,
+                "This Trellis install already has a practice. Clinicians must be invited by the practice owner.",
+            )
         from datetime import datetime, timezone
         await create_clinician(
             practice_id=practice_id,

@@ -85,6 +85,34 @@ async def test_book_assessment(client):
     assert data["recurrence_id"] is None
 
 
+async def test_book_appointment_uses_trusted_participant_fields(client):
+    """Appointment creation ignores spoofed caller-supplied participant emails."""
+    await _setup_clinician(client)
+    await _setup_client(client)
+    resp = await client.post(
+        "/api/appointments",
+        json={
+            "client_id": "test-client-1",
+            "client_email": "attacker@example.com",
+            "client_name": "Spoofed Client",
+            "clinician_id": "test-clinician-1",
+            "clinician_email": "attacker-clinician@example.com",
+            "type": "assessment",
+            "scheduled_at": _future_iso(),
+            "duration_minutes": 60,
+        },
+        headers=clinician_headers(),
+    )
+    assert resp.status_code == 200
+
+    from db import get_pool
+
+    pool = await get_pool()
+    row = await pool.fetchrow("SELECT * FROM appointments LIMIT 1")
+    assert row["client_email"] == "client@example.com"
+    assert row["clinician_email"] == "test@example.com"
+
+
 async def test_book_individual_creates_series(client):
     """POST /api/appointments for individual creates 4 recurring instances."""
     await _setup_clinician(client)

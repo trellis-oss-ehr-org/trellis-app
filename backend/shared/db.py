@@ -246,9 +246,22 @@ async def delete_clinician_and_practice(firebase_uid: str) -> None:
 # Practices
 # ---------------------------------------------------------------------------
 
+class PracticeAlreadyExistsError(Exception):
+    """Raised when an install already has its single supported practice."""
+
+
 async def create_practice(name: str, practice_type: str = "solo", **kwargs) -> str:
-    """Create a practice and return its UUID."""
+    """Create the install's practice and return its UUID.
+
+    Trellis is deployed as one install per solo or group practice. Enforce that
+    invariant at the shared write boundary so owner/admin queries cannot drift
+    into accidental multi-practice semantics.
+    """
     pool = await get_pool()
+    existing_id = await pool.fetchval("SELECT id FROM practices LIMIT 1")
+    if existing_id:
+        raise PracticeAlreadyExistsError("This Trellis install already has a practice.")
+
     allowed = {
         "tax_id", "npi", "phone", "email", "website",
         "address_line1", "address_line2", "city", "state", "zip",
@@ -2501,6 +2514,7 @@ async def reschedule_appointment(
 async def get_client_document_signing_status(
     client_id: str,
     practice_id: str | None = None,
+    include_draft: bool = True,
 ) -> dict:
     """Get document signing status summary for a client.
 
@@ -2510,9 +2524,10 @@ async def get_client_document_signing_status(
     Returns {total: int, signed: int, pending: int, packages: list[dict]}.
     """
     pool = await get_pool()
+    draft_filter = "" if include_draft else "AND dp.status <> 'draft'"
     if practice_id:
         rows = await pool.fetch(
-            """
+            f"""
             SELECT dp.id AS package_id, dp.status AS package_status,
                    dp.created_at AS package_created_at,
                    COUNT(d.id) AS total_docs,
@@ -2524,6 +2539,7 @@ async def get_client_document_signing_status(
             JOIN clinicians cl ON cl.firebase_uid = c.primary_clinician_id
             WHERE dp.client_id = $1
               AND cl.practice_id = $2::uuid
+              {draft_filter}
             GROUP BY dp.id
             ORDER BY dp.created_at DESC
             """,
@@ -2532,7 +2548,7 @@ async def get_client_document_signing_status(
         )
     else:
         rows = await pool.fetch(
-            """
+            f"""
             SELECT dp.id AS package_id, dp.status AS package_status,
                    dp.created_at AS package_created_at,
                    COUNT(d.id) AS total_docs,
@@ -2541,6 +2557,7 @@ async def get_client_document_signing_status(
             FROM document_packages dp
             JOIN documents d ON d.package_id = dp.id
             WHERE dp.client_id = $1
+              {draft_filter}
             GROUP BY dp.id
             ORDER BY dp.created_at DESC
             """,

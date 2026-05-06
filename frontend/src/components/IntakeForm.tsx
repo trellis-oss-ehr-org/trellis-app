@@ -3,6 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useClientApi } from "../hooks/useClientApi";
 import { API_BASE } from "../lib/api-config";
 import { Button } from "./Button";
+import { useNavigate } from "react-router-dom";
 
 interface IntakeData {
   name: string;
@@ -92,6 +93,7 @@ const SMS_REMINDER_CONSENT_TEXT =
 export function IntakeForm({ intakeMode: _intakeMode = "standard" }: { intakeMode?: "standard" | "iop" }) {
   const { getIdToken, cashOnly } = useAuth();
   const { getProfile } = useClientApi();
+  const navigate = useNavigate();
   const [data, setData] = useState<IntakeData>(empty);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -203,6 +205,13 @@ export function IntakeForm({ intakeMode: _intakeMode = "standard" }: { intakeMod
           Thank you, {data.preferredName || data.name}. Your care team will
           review your information and reach out soon.
         </p>
+        <Button
+          type="button"
+          onClick={() => navigate("/client/dashboard")}
+          className="mt-8"
+        >
+          Return to home page
+        </Button>
       </div>
     );
   }

@@ -270,6 +270,7 @@ export default function ClientDetailPage() {
   const [loading, setLoading] = useState(true);
   const [docsWarning, setDocsWarning] = useState(false);
   const [docsWarningAction, setDocsWarningAction] = useState<"idle" | "sending" | "sent" | "dismissing">("idle");
+  const [docsWarningError, setDocsWarningError] = useState("");
   useMinuteTick();
   const [generatingNoteFor, setGeneratingNoteFor] = useState<string | null>(null);
   const [generatingPlan, setGeneratingPlan] = useState(false);
@@ -780,11 +781,13 @@ export default function ClientDetailPage() {
               <button
                 onClick={async () => {
                   setDocsWarningAction("sending");
+                  setDocsWarningError("");
                   try {
                     await api.post(`/api/documents/send-reminder/${client.firebase_uid}`, {});
                     setDocsWarningAction("sent");
                     setTimeout(() => setDocsWarning(false), 1500);
-                  } catch {
+                  } catch (err: any) {
+                    setDocsWarningError(err.message || "Failed to send reminder.");
                     setDocsWarningAction("idle");
                   }
                 }}
@@ -793,6 +796,9 @@ export default function ClientDetailPage() {
               >
                 {docsWarningAction === "sending" ? "Sending..." : docsWarningAction === "sent" ? "Reminder sent!" : "Send email reminder to client"}
               </button>
+              {docsWarningError && (
+                <p className="text-sm text-red-600">{docsWarningError}</p>
+              )}
               <button
                 onClick={() => setDocsWarning(false)}
                 className="w-full px-4 py-2.5 text-sm font-medium text-warm-600 bg-warm-50 rounded-xl hover:bg-warm-100 transition-colors"

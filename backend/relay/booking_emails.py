@@ -9,6 +9,7 @@ Uses the shared mailer.py module for Gmail API delivery.
 """
 import logging
 import sys
+from html import escape
 from datetime import datetime
 
 from pathlib import Path as _Path
@@ -18,6 +19,16 @@ sys.path.insert(0, str(_here / "shared"))          # Docker
 from mailer import send_email
 
 logger = logging.getLogger(__name__)
+
+
+def _html(value) -> str:
+    """Escape a value for HTML text and attribute interpolation."""
+    return escape("" if value is None else str(value), quote=True)
+
+
+def _subject(value) -> str:
+    """Remove header-breaking control characters from email subjects."""
+    return " ".join(("" if value is None else str(value)).splitlines())
 
 
 async def send_clinician_confirmation(
@@ -52,18 +63,28 @@ async def send_clinician_confirmation(
     if len(transcript) > 4000:
         transcript_preview += "\n... [transcript truncated]"
 
-    subject = f"New Intake Assessment Booked: {client_name} — {display_date}"
+    safe_practice_name = _html(practice_name)
+    safe_clinician_name = _html(clinician_name)
+    safe_client_name = _html(client_name)
+    safe_client_email = _html(client_email)
+    safe_display_date = _html(display_date)
+    safe_display_time = _html(display_time)
+    safe_meet_link = _html(meet_link) if meet_link else ""
+    safe_appointment_id = _html(appointment_id) if appointment_id else ""
+    safe_transcript_preview = _html(transcript_preview)
+
+    subject = _subject(f"New Intake Assessment Booked: {client_name} — {display_date}")
 
     html = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 640px; margin: 0 auto; background: #fafaf9;">
         <div style="background: #0f766e; padding: 24px; border-radius: 12px 12px 0 0;">
             <h1 style="color: white; margin: 0; font-size: 20px;">New Intake Assessment Booked</h1>
-            <p style="color: #99f6e4; margin: 4px 0 0; font-size: 14px;">{practice_name}</p>
+            <p style="color: #99f6e4; margin: 4px 0 0; font-size: 14px;">{safe_practice_name}</p>
         </div>
 
         <div style="background: white; padding: 24px; border: 1px solid #e7e5e4; border-top: none;">
             <p style="color: #44403c; margin: 0 0 16px; font-size: 15px;">
-                Hi {clinician_name}, a new client has completed their voice intake and booked an initial assessment.
+                Hi {safe_clinician_name}, a new client has completed their voice intake and booked an initial assessment.
             </p>
 
             <div style="background: #f0fdfa; border: 1px solid #ccfbf1; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
@@ -71,19 +92,19 @@ async def send_clinician_confirmation(
                 <table style="width: 100%; border-collapse: collapse;">
                     <tr>
                         <td style="padding: 4px 0; color: #57534e; font-weight: 600; width: 120px;">Client</td>
-                        <td style="padding: 4px 0; color: #1c1917;">{client_name}</td>
+                        <td style="padding: 4px 0; color: #1c1917;">{safe_client_name}</td>
                     </tr>
                     <tr>
                         <td style="padding: 4px 0; color: #57534e; font-weight: 600;">Email</td>
-                        <td style="padding: 4px 0; color: #1c1917;"><a href="mailto:{client_email}" style="color: #0f766e;">{client_email}</a></td>
+                        <td style="padding: 4px 0; color: #1c1917;"><a href="mailto:{safe_client_email}" style="color: #0f766e;">{safe_client_email}</a></td>
                     </tr>
                     <tr>
                         <td style="padding: 4px 0; color: #57534e; font-weight: 600;">Date</td>
-                        <td style="padding: 4px 0; color: #1c1917;">{display_date}</td>
+                        <td style="padding: 4px 0; color: #1c1917;">{safe_display_date}</td>
                     </tr>
                     <tr>
                         <td style="padding: 4px 0; color: #57534e; font-weight: 600;">Time</td>
-                        <td style="padding: 4px 0; color: #1c1917;">{display_time}</td>
+                        <td style="padding: 4px 0; color: #1c1917;">{safe_display_time}</td>
                     </tr>
                     <tr>
                         <td style="padding: 4px 0; color: #57534e; font-weight: 600;">Duration</td>
@@ -93,7 +114,7 @@ async def send_clinician_confirmation(
                         <td style="padding: 4px 0; color: #57534e; font-weight: 600;">Type</td>
                         <td style="padding: 4px 0; color: #1c1917;">Intake Assessment (90791)</td>
                     </tr>
-                    {f'<tr><td style="padding: 4px 0; color: #57534e; font-weight: 600;">Meet Link</td><td style="padding: 4px 0;"><a href="{meet_link}" style="color: #0f766e;">{meet_link}</a></td></tr>' if meet_link else ''}
+                    {f'<tr><td style="padding: 4px 0; color: #57534e; font-weight: 600;">Meet Link</td><td style="padding: 4px 0;"><a href="{safe_meet_link}" style="color: #0f766e;">{safe_meet_link}</a></td></tr>' if meet_link else ''}
                 </table>
             </div>
 
@@ -104,11 +125,11 @@ async def send_clinician_confirmation(
                     If a different level of care is recommended, please reach out to the client before the session.
                 </p>
                 <div style="background: #f6f7f4; border: 1px solid #e8ebe3; border-radius: 8px; padding: 16px; max-height: 400px; overflow-y: auto;">
-                    <pre style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: #44403c; white-space: pre-wrap; line-height: 1.6;">{transcript_preview}</pre>
+                    <pre style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: #44403c; white-space: pre-wrap; line-height: 1.6;">{safe_transcript_preview}</pre>
                 </div>
             </div>
 
-            {f'<p style="font-size: 12px; color: #a8a29e; margin: 16px 0 0;">Appointment ID: {appointment_id}</p>' if appointment_id else ''}
+            {f'<p style="font-size: 12px; color: #a8a29e; margin: 16px 0 0;">Appointment ID: {safe_appointment_id}</p>' if appointment_id else ''}
         </div>
 
         <div style="padding: 16px; text-align: center; border-radius: 0 0 12px 12px; background: #f5f5f4; border: 1px solid #e7e5e4; border-top: none;">
@@ -179,29 +200,36 @@ async def send_client_confirmation(
         display_date = scheduled_at
         display_time = ""
 
-    subject = f"Your Appointment is Confirmed — {display_date} at {display_time}"
+    safe_practice_name = _html(practice_name)
+    safe_client_name = _html(client_name)
+    safe_clinician_name = _html(clinician_name)
+    safe_display_date = _html(display_date)
+    safe_display_time = _html(display_time)
+    safe_meet_link = _html(meet_link) if meet_link else ""
+
+    subject = _subject(f"Your Appointment is Confirmed — {display_date} at {display_time}")
 
     html = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 640px; margin: 0 auto; background: #fafaf9;">
         <div style="background: #0f766e; padding: 24px; border-radius: 12px 12px 0 0;">
             <h1 style="color: white; margin: 0; font-size: 20px;">Appointment Confirmed</h1>
-            <p style="color: #99f6e4; margin: 4px 0 0; font-size: 14px;">{practice_name}</p>
+            <p style="color: #99f6e4; margin: 4px 0 0; font-size: 14px;">{safe_practice_name}</p>
         </div>
 
         <div style="background: white; padding: 24px; border: 1px solid #e7e5e4; border-top: none;">
             <p style="color: #44403c; margin: 0 0 20px; font-size: 15px;">
-                Hi {client_name}, your intake assessment has been scheduled. Here are the details:
+                Hi {safe_client_name}, your intake assessment has been scheduled. Here are the details:
             </p>
 
             <div style="background: #f0fdfa; border: 1px solid #ccfbf1; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
                 <table style="width: 100%; border-collapse: collapse;">
                     <tr>
                         <td style="padding: 6px 0; color: #57534e; font-weight: 600; width: 120px;">Date</td>
-                        <td style="padding: 6px 0; color: #1c1917; font-size: 16px; font-weight: 600;">{display_date}</td>
+                        <td style="padding: 6px 0; color: #1c1917; font-size: 16px; font-weight: 600;">{safe_display_date}</td>
                     </tr>
                     <tr>
                         <td style="padding: 6px 0; color: #57534e; font-weight: 600;">Time</td>
-                        <td style="padding: 6px 0; color: #1c1917; font-size: 16px; font-weight: 600;">{display_time}</td>
+                        <td style="padding: 6px 0; color: #1c1917; font-size: 16px; font-weight: 600;">{safe_display_time}</td>
                     </tr>
                     <tr>
                         <td style="padding: 6px 0; color: #57534e; font-weight: 600;">Duration</td>
@@ -209,7 +237,7 @@ async def send_client_confirmation(
                     </tr>
                     <tr>
                         <td style="padding: 6px 0; color: #57534e; font-weight: 600;">Clinician</td>
-                        <td style="padding: 6px 0; color: #1c1917;">{clinician_name}</td>
+                        <td style="padding: 6px 0; color: #1c1917;">{safe_clinician_name}</td>
                     </tr>
                     <tr>
                         <td style="padding: 6px 0; color: #57534e; font-weight: 600;">Format</td>
@@ -219,11 +247,11 @@ async def send_client_confirmation(
 
                 {f'''
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #ccfbf1;">
-                    <a href="{meet_link}" style="display: inline-block; background: #0f766e; color: white; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+                    <a href="{safe_meet_link}" style="display: inline-block; background: #0f766e; color: white; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
                         Join Video Session
                     </a>
                     <p style="margin: 8px 0 0; font-size: 12px; color: #78716c;">
-                        Or copy this link: {meet_link}
+                        Or copy this link: {safe_meet_link}
                     </p>
                 </div>
                 ''' if meet_link else ''}
@@ -233,7 +261,7 @@ async def send_client_confirmation(
                 <h3 style="margin: 0 0 8px; color: #92400e; font-size: 14px;">What to Expect</h3>
                 <ul style="margin: 0; padding: 0 0 0 20px; color: #78716c; font-size: 13px; line-height: 1.8;">
                     <li>This is an initial intake assessment ({duration_minutes} minutes)</li>
-                    <li>You'll meet with {clinician_name} via video call</li>
+                    <li>You'll meet with {safe_clinician_name} via video call</li>
                     <li>Please find a quiet, private space for the session</li>
                     <li>Have your insurance card handy if applicable</li>
                     <li>You may receive consent documents to review and sign before the session</li>

@@ -185,8 +185,9 @@ export default function SchedulePage() {
               clinicianEmail={user?.email || ""}
               getSlots={api.getSlots}
               onBook={async (data) => {
-                await api.bookAppointment(data);
+                const result = await api.bookAppointment(data);
                 await loadSchedule();
+                return result;
               }}
             />
           </div>

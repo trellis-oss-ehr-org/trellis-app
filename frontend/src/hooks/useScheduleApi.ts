@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useAuth } from "./useAuth";
 import { API_BASE } from "../lib/api-config";
 import type {
@@ -87,7 +87,13 @@ export function useScheduleApi() {
     }) => {
       const token = await getIdToken();
       return api<{
-        appointments: { id: string; scheduled_at: string; meet_link: string | null }[];
+        appointments: {
+          id: string;
+          scheduled_at: string;
+          meet_link: string | null;
+          calendar_event_id?: string | null;
+          calendar_event_created?: boolean;
+        }[];
         recurrence_id: string | null;
       }>("/api/appointments", token, {
         method: "POST",
@@ -135,13 +141,24 @@ export function useScheduleApi() {
     [getIdToken],
   );
 
-  return {
-    getAvailability,
-    setAvailability,
-    getSlots,
-    bookAppointment,
-    getAppointments,
-    updateAppointment,
-    endSeries,
-  };
+  return useMemo(
+    () => ({
+      getAvailability,
+      setAvailability,
+      getSlots,
+      bookAppointment,
+      getAppointments,
+      updateAppointment,
+      endSeries,
+    }),
+    [
+      getAvailability,
+      setAvailability,
+      getSlots,
+      bookAppointment,
+      getAppointments,
+      updateAppointment,
+      endSeries,
+    ],
+  );
 }

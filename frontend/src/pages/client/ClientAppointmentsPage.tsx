@@ -105,6 +105,7 @@ export default function ClientAppointmentsPage() {
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [booking, setBooking] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [bookingCalendarCreated, setBookingCalendarCreated] = useState(false);
   const [error, setError] = useState("");
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -214,7 +215,13 @@ export default function ClientAppointmentsPage() {
     setBooking(true);
     setError("");
     try {
-      await api.post("/api/appointments", {
+      const result = await api.post<{
+        appointments?: {
+          calendar_event_created?: boolean;
+          calendar_event_id?: string | null;
+          meet_link?: string | null;
+        }[];
+      }>("/api/appointments", {
         client_id: user.uid,
         client_email: user.email || "",
         client_name: user.displayName || user.email || "",
@@ -224,6 +231,9 @@ export default function ClientAppointmentsPage() {
         scheduled_at: selectedSlot.start,
         duration_minutes: practice.default_session_duration || 60,
       });
+      setBookingCalendarCreated(
+        Boolean(result.appointments?.some((a) => a.calendar_event_created || a.calendar_event_id || a.meet_link)),
+      );
       setBookingSuccess(true);
       setSelectedSlot(null);
       setSlots([]);
@@ -531,10 +541,15 @@ export default function ClientAppointmentsPage() {
                   ? "Your session has been scheduled."
                   : "Your assessment has been scheduled."}
               </p>
-              <p className="text-sm text-warm-400">Calendar invites have been sent.</p>
+              <p className="text-sm text-warm-400">
+                {bookingCalendarCreated
+                  ? "Calendar event created for your appointment."
+                  : "Calendar event was not created. Your clinician can connect Google Calendar to enable invites and Meet links."}
+              </p>
               <button
                 onClick={() => {
                   setBookingSuccess(false);
+                  setBookingCalendarCreated(false);
                   setSlots([]);
                   setSelectedSlot(null);
                   setTab("upcoming");

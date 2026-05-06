@@ -144,7 +144,7 @@ function StepWelcome() {
       </h2>
       <p className="text-warm-500 text-[0.95rem] mb-6 leading-relaxed">
         This wizard will guide you through setting up Trellis in your own Google Cloud
-        project and Google Workspace. Full setup instructions are in CLAUDE.md.
+        project and Google Workspace. Full setup instructions are in SETUP.md.
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-6">
@@ -276,8 +276,8 @@ function StepGcpProject({
 
       <InfoBox variant="success" title="Next steps">
         After entering your project details, follow the full setup guide in{" "}
-        <strong>CLAUDE.md</strong> to complete deployment. Open the repo in Claude Code
-        and say "Set up Trellis" to get started.
+        <strong>SETUP.md</strong> to complete deployment. Open the repo in Codex
+        and say "Set up Trellis using SETUP.md" to get started.
       </InfoBox>
     </>
   );

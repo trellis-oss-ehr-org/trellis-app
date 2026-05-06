@@ -1,6 +1,9 @@
 """Tests for auth/register and auth/me endpoints."""
+import pytest
+
 from conftest import make_token, clinician_headers, client_headers
 from auth import dev_mode_is_forbidden
+from db import PracticeAlreadyExistsError, create_practice
 
 
 async def test_register_clinician(client):
@@ -15,6 +18,33 @@ async def test_register_clinician(client):
     data = resp.json()
     assert data["role"] == "clinician"
     assert "user_id" in data
+
+
+async def test_create_practice_enforces_single_practice_install(client):
+    """The shared practice creation boundary rejects a second practice."""
+    await create_practice("First Practice")
+
+    with pytest.raises(PracticeAlreadyExistsError):
+        await create_practice("Second Practice")
+
+
+async def test_second_uninvited_clinician_registration_rejected(client):
+    """One install supports one practice; later clinicians must be invited."""
+    first = await client.post(
+        "/api/auth/register",
+        json={"role": "clinician", "display_name": "Dr. First"},
+        headers=clinician_headers(),
+    )
+    assert first.status_code == 200
+
+    token = make_token("second-clinician", "second@example.com")
+    second = await client.post(
+        "/api/auth/register",
+        json={"role": "clinician", "display_name": "Dr. Second"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert second.status_code == 403
+    assert "Clinicians must be invited" in second.json()["detail"]
 
 
 async def test_register_client(client):
@@ -67,6 +97,18 @@ async def test_get_me_unregistered(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["registered"] is False
+
+
+async def test_unregistered_user_cannot_pass_role_gate(client):
+    """Role-gated endpoints fail closed for authenticated but unregistered users."""
+    token = make_token("unknown-user-xyz", "nobody@example.com")
+    resp = await client.put(
+        "/api/availability",
+        json={"windows": []},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "User is not registered."
 
 
 async def test_missing_token_returns_401(client):

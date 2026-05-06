@@ -16,7 +16,7 @@ MIT-licensed, open-source, AI-native EHR for solo behavioral health therapists. 
 
 Trellis is designed to support HIPAA-regulated use when deployed and operated appropriately in a practice-controlled Google Cloud environment with the practice's own Google BAA. HIPAA compliance still depends on the practice's deployment, configuration, policies, risk analysis, workforce procedures, and any modifications made under the MIT license.
 
-See [HIPAA Engineering Notes](docs/hipaa-engineering-notes.md) for implementation safeguards, production deployment checks, and operational controls that must be handled outside the codebase. The hosted texting add-on flow is documented in [Texting BAA and Stripe Flow](docs/texting-baa-stripe-flow.md), with [Texting Support SOP](docs/texting-support-sop.md), [Texting Launch Checklist](docs/texting-launch-checklist.md), and [Texting Remaining Work](docs/texting-remaining-work.md).
+See [HIPAA Engineering Notes](docs/hipaa-engineering-notes.md) for implementation safeguards and [HIPAA Responsibilities When Self-Hosting Trellis](docs/hipaa-self-hosting-responsibilities.md) for the practice's responsibilities around risk analysis, BAAs, policies, access review, incident response, and production operations. Codex-assisted audit prompts are available in [Codex Audit Agents](docs/agents/README.md), including a HIPAA-oriented audit agent and a code quality/security audit agent. The hosted texting add-on flow is documented in [Texting BAA and Stripe Flow](docs/texting-baa-stripe-flow.md), with [Texting Support SOP](docs/texting-support-sop.md), [Texting Launch Checklist](docs/texting-launch-checklist.md), and [Texting Remaining Work](docs/texting-remaining-work.md).
 
 ## Tech Stack
 
@@ -42,11 +42,15 @@ See [HIPAA Engineering Notes](docs/hipaa-engineering-notes.md) for implementatio
 
 ### Setup
 
-The easiest way to set up Trellis is with [Claude Code](https://claude.com/claude-code). Open the repo and say **"Set up Trellis"** — the AI will walk you through every step, create all config files, and deploy everything for you. The full setup guide is in [CLAUDE.md](CLAUDE.md).
+The easiest way to set up Trellis is with Codex. Open the repo and say **"Set up Trellis using SETUP.md"** — Codex can walk you through each phase, create config files, and help deploy the services. The full setup guide is in [SETUP.md](SETUP.md).
+
+### Codex Security Audits
+
+After setup, open the repo in Codex and say **"Run a full Trellis security audit using docs/agents/code-quality-security-agent.md and docs/agents/hipaa-audit-agent.md."** Codex will use the embedded audit prompts to inspect the local instance, run non-destructive checks where available, and return prioritized findings without printing secrets or PHI.
 
 ### Manual Setup
 
-If you prefer to set things up manually, follow the phases in [CLAUDE.md](CLAUDE.md):
+If you prefer to set things up manually, follow the phases in [SETUP.md](SETUP.md):
 
 1. **GCP Project** — Create a project and enable APIs
 2. **Database** — Provision Cloud SQL PostgreSQL and run migrations

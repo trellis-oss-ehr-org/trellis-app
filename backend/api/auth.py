@@ -119,9 +119,10 @@ def require_role(*allowed_roles: str):
         role = await get_user_role(user["uid"])
 
         if role is None:
-            # No user record yet — allow through but mark as unregistered
-            user["role"] = None
-            return user
+            raise HTTPException(
+                status_code=403,
+                detail="User is not registered.",
+            )
 
         if role not in allowed_roles:
             raise HTTPException(
