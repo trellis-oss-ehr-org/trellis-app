@@ -90,7 +90,9 @@ async def test_sign_document(client):
     await _register_clinician(client)
     await _register_client(client)
     create_resp = await _create_package(client)
-    doc_id = create_resp.json()["document_ids"][0]
+    data = create_resp.json()
+    pkg_id = data["package_id"]
+    doc_id = data["document_ids"][0]
 
     # Sign the document (as the client who owns it)
     resp = await client.post(
@@ -104,6 +106,13 @@ async def test_sign_document(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "signed"
+
+    pkg_resp = await client.get(
+        f"/api/documents/packages/{pkg_id}",
+        headers=client_headers(),
+    )
+    assert pkg_resp.status_code == 200
+    assert pkg_resp.json()["status"] == "partially_signed"
 
 
 async def test_clinician_cannot_sign_client_document(client):

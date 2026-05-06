@@ -680,9 +680,10 @@ async def sign_doc(
         )
         return {"status": "signed", "package_complete": True}
 
-    # Mark partially signed if first signature
+    # Mark partially signed if first signature. A client may reach the signing
+    # endpoint before an explicit send transition in local/test flows.
     pkg = await get_document_package(package_id)
-    if pkg and pkg["status"] == "sent":
+    if pkg and pkg["status"] in {"draft", "sent"}:
         await update_package_status(package_id, "partially_signed")
 
     return {"status": "signed", "package_complete": False}
