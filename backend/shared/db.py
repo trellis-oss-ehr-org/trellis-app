@@ -1,7 +1,8 @@
 """Shared async database layer using asyncpg.
 
 Both the API and relay services import this module.
-Requires DATABASE_URL env var (postgresql://...).
+Uses DATABASE_URL when provided. Otherwise uses DB_* environment variables,
+including DB_CONNECTION_NAME for Cloud Run's Cloud SQL Unix socket.
 """
 import os
 import logging
@@ -17,10 +18,26 @@ logger = logging.getLogger(__name__)
 
 _pool: asyncpg.Pool | None = None
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://ehr:@127.0.0.1:5432/ehr",
-)
+
+def _database_connect_kwargs() -> dict:
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        return {"dsn": database_url}
+
+    connection_name = os.getenv("DB_CONNECTION_NAME", "").strip()
+    host = (
+        f"/cloudsql/{connection_name}"
+        if connection_name
+        else os.getenv("DB_HOST", "127.0.0.1")
+    )
+
+    return {
+        "host": host,
+        "port": int(os.getenv("DB_PORT", "5432")),
+        "database": os.getenv("DB_NAME", "trellis"),
+        "user": os.getenv("DB_USER", "postgres"),
+        "password": os.getenv("DB_PASSWORD", ""),
+    }
 
 
 def normalize_phone_number_for_texting(value: str) -> str:
@@ -104,7 +121,10 @@ async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
         _pool = await asyncpg.create_pool(
-            DATABASE_URL, min_size=2, max_size=10, init=_init_connection
+            **_database_connect_kwargs(),
+            min_size=2,
+            max_size=10,
+            init=_init_connection,
         )
         logger.info("Database pool created")
     return _pool

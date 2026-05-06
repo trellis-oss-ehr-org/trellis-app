@@ -35,14 +35,13 @@ See [HIPAA Engineering Notes](docs/hipaa-engineering-notes.md) for implementatio
 
 ### Prerequisites
 
-- Node.js 20+
-- Python 3.12+
-- Google Cloud account with a project
-- Firebase project
+- Codex Desktop with this repository opened as a project
+- Google Cloud account signed in through the browser
+- Active Google Cloud billing account
 
 ### Setup
 
-The easiest way to set up Trellis is with Codex. Open the repo and say **"Set up Trellis using SETUP.md"** — Codex can walk you through each phase, create config files, and help deploy the services. The full setup guide is in [SETUP.md](SETUP.md).
+The easiest way to set up Trellis is with Codex Desktop. Open the repo and say **"Set up Trellis"**. Codex will follow [SETUP.md](SETUP.md), install or verify local tools, create the Google Cloud and Firebase resources after confirmation, create config files, run local verification, and guide deployment.
 
 ### Codex Security Audits
 

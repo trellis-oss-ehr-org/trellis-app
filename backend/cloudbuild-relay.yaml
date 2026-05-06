@@ -1,5 +1,15 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-f', 'relay/Dockerfile', '-t', 'gcr.io/$PROJECT_ID/trellis-relay:latest', '.']
+    args:
+      - 'build'
+      - '-f'
+      - 'relay/Dockerfile'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/trellis-relay:latest'
+      - '.'
 images:
-  - 'gcr.io/$PROJECT_ID/trellis-relay:latest'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/trellis-relay:latest'
+
+substitutions:
+  _REGION: us-central1
+  _REPO: trellis
